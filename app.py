@@ -78,12 +78,19 @@ app.layout = html.Div(
     ]
 )
 
-# Update Map Graph based on date-picker and selected species
+
+
+
+# Update Map Graph based on date-picker, selected species, and click event
 @app.callback(
     Output("map-graph", "figure"),
-    [Input("date-picker", "date"), Input("species-dropdown", "value")],
+    [
+        Input("date-picker", "date"),
+        Input("species-dropdown", "value"),
+        Input("map-graph", "clickData"),  # Input to capture click events
+    ],
 )
-def update_graph(datePicked, selectedSpecies):
+def update_graph(datePicked, selectedSpecies, clickData):
     date_picked = pd.to_datetime(datePicked)
     filtered_df = df[(df["Date"].dt.month == date_picked.month) & (df["Date"].dt.day == date_picked.day)]
 
@@ -93,6 +100,19 @@ def update_graph(datePicked, selectedSpecies):
     # Aggregate data by Latitude and Longitude to get incident counts per location
     bubble_data = filtered_df.groupby(["Latitude", "Longitude"]).size().reset_index(name="Incident Count")
 
+    # Set default zoom and center
+    zoom_level = 4
+    center = {"lat": -25.0, "lon": 133.0}  # Default to center on Australia
+
+    # Adjust zoom and center based on click
+    if clickData:
+        clicked_point = clickData["points"][0]
+        center = {
+            "lat": float(clicked_point["lat"]),  # Convert latitude to float
+            "lon": float(clicked_point["lon"]),  # Convert longitude to float
+        }
+        zoom_level = 12  # Zoom in closer after clicking
+
     # Create bubble map using Plotly Express
     fig = px.scatter_mapbox(
         bubble_data,
@@ -100,18 +120,26 @@ def update_graph(datePicked, selectedSpecies):
         lon="Longitude",
         size="Incident Count",  # Bubble size based on the count of incidents
         hover_name="Incident Count",
-        color_discrete_sequence=["blue"],  # Customize color if needed
-        zoom=4,
-        center={"lat": -25.0, "lon": 133.0},  # Center on Australia
+        color_discrete_sequence=["#636EFA"],  # Lighter shade of blue
+        zoom=zoom_level,
+        center=center,
         mapbox_style="open-street-map",
     )
+
+    # Adjust bubble transparency
+    fig.update_traces(marker=dict(opacity=0.5))  # Set the bubble opacity to 50%
 
     fig.update_layout(
         title="Shark Incidents Density",
         margin={"r": 0, "t": 0, "l": 0, "b": 0},
+         mapbox=dict(zoom=zoom_level, center=center),
+
+        transition=dict(duration=500, easing="cubic-in-out"),  # Add transition for smooth zoom
+
     )
 
     return fig
+
 
 if __name__ == "__main__":
     app.run_server(debug=True)
