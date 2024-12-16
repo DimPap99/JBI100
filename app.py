@@ -15,6 +15,10 @@ df = pd.read_csv("shark.csv")  # Replace with the path to your dataset
 df = df.dropna(subset=["Latitude", "Longitude"])  # Ensure valid Latitude and Longitude
 df["Date"] = pd.to_datetime(df["Incident.year"].astype(str) + "-" + df["Incident.month"].astype(str), errors="coerce")
 
+# Compute additional attributes for analysis
+df["Fatal"] = df["Injury.severity"].str.contains("fatal", case=False, na=False)
+df["Non-Fatal"] = ~df["Fatal"]
+
 # Dropdown options for shark species
 species_options = [
     {"label": species, "value": species}
@@ -45,6 +49,8 @@ app.layout = html.Div(
                             options=species_options,
                             placeholder="Select a Shark Species",
                         ),
+                        html.H3("Analyze Shark Species"),
+                        dcc.Graph(id="diverging-bar-chart"),
                     ],
                 ),
                 html.Div(
@@ -55,30 +61,8 @@ app.layout = html.Div(
                 ),
             ],
         ),
-        # Modal for displaying an empty modal
-        html.Div(
-            id="info-modal",
-            style={
-                "display": "none",  # Initially hidden
-                "position": "fixed",
-                "top": "20%",
-                "left": "30%",
-                "width": "40%",
-                "height": "40%",
-                "backgroundColor": "white",
-                "boxShadow": "0px 0px 10px rgba(0, 0, 0, 0.5)",
-                "zIndex": 1000,  # Ensure it is above other elements
-                "padding": "20px",
-                "borderRadius": "10px",
-            },
-            children=[
-                html.Button("Close", id="close-modal", style={"float": "right", "margin": "10px"}),
-                html.Div("This is an empty modal"),  # Empty modal content
-            ],
-        ),
     ]
 )
-
 
 @app.callback(
     Output("map-graph", "figure"),
@@ -116,33 +100,47 @@ def update_graph(datePicked, selectedSpecies, clickData):
     return fig
 
 @app.callback(
-    Output("info-modal", "style"),
-    [Input("map-graph", "clickData"), Input("close-modal", "n_clicks")],
+    Output("diverging-bar-chart", "figure"),
+    [Input("species-dropdown", "value")],
 )
-def toggle_modal(clickData, close_clicks):
-    ctx = dash.callback_context
-    triggered_input = ctx.triggered[0]["prop_id"]
+def update_diverging_bar_chart(selectedSpecies):
+    if not selectedSpecies:
+        return px.bar(title="Select a Shark Species for Analysis")
 
-    if "close-modal" in triggered_input:
-        return {"display": "none"}  # Close the modal
+    # Aggregate data for analysis
+    grouped_data = df.groupby("Shark.common.name").agg(
+        Incidents=("Shark.common.name", "count"),
+        Fatalities=("Fatal", "sum"),
+        NonFatal=("Non-Fatal", "sum"),
+    ).reset_index()
 
-    if "map-graph.clickData" in triggered_input:
-        return {
-            "display": "block",  # Open modal
-            "position": "fixed",
-            "top": "20%",
-            "left": "30%",
-            "width": "40%",
-            "height": "40%",
-            "backgroundColor": "white",
-            "boxShadow": "0px 0px 10px rgba(0, 0, 0, 0.5)",
-            "zIndex": 1000,
-            "padding": "20px",
-            "borderRadius": "10px",
-        }
+    # Reshape data for diverging bar chart
+    melted_data = grouped_data.melt(
+        id_vars="Shark.common.name",
+        value_vars=["Incidents", "Fatalities", "NonFatal"],
+        var_name="Category",
+        value_name="Count",
+    )
 
-    return {"display": "none"}  # Default state
+    # Filter for the selected species
+    filtered_data = melted_data[melted_data["Shark.common.name"] == selectedSpecies]
 
+    # Diverging bar chart
+    fig = px.bar(
+        filtered_data,
+        x="Count",
+        y="Category",
+        color="Category",
+        orientation="h",
+        title=f"Analysis of {selectedSpecies}",
+        color_discrete_sequence=px.colors.qualitative.Set2,  # Categorical colormap
+    )
+    fig.update_layout(
+        xaxis_title="Number of Incidents",
+        yaxis_title="Category",
+        margin={"r": 0, "t": 40, "l": 0, "b": 0},
+    )
+    return fig
 
 if __name__ == "__main__":
     app.run_server(debug=True)
