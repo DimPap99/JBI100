@@ -70,8 +70,39 @@ app.layout = html.Div(
                 html.Div(
                     className="eight columns div-for-charts bg-grey",
                     children=[
-                        dcc.Graph(id="map-graph"),  # Bubble map visualization
-                    ],
+                        dcc.Graph(id="map-graph", config={"scrollZoom":True}),  # Bubble map visualization
+                         html.Div(
+                            id="incident-details",
+                            style={
+                                "position": "absolute",
+                                "top": "20px",
+                                "right": "100px",
+                                "border": "1px solid #ccc",
+                                "padding": "10px",
+                                "backgroundColor": "#f9f9f9",
+                                "boxShadow": "0px 4px 10px rgba(0, 0, 0, 0.1)",
+                                "display": "none",  # Initially hidden
+                                "zIndex": 10,  # Ensure it appears above other content
+                                "width": "300px",
+                            },
+                        ),
+                        html.Div(
+                            id="blank-widget",
+                            style={
+                                "border": "2px dashed #ccc",  # Optional styling to make it visible
+                                "padding": "20px",
+                                "margin": "10px",
+                                "height": "50px",
+                                "width": "50px",
+                                "textAlign": "center",
+                                "display": "flex",
+                                "justifyContent": "center",
+                                "alignItems": "center",
+                            },
+                            children="This is a blank widget",  # Optional placeholder text
+                        ),
+                        html.Button("Clear Widget", id="clear-button"),
+                    ]
                 ),
             ],
         )
@@ -112,6 +143,38 @@ def update_graph(datePicked, selectedSpecies):
     )
 
     return fig
+
+@app.callback(
+    [Output("incident-details", "children"), Output("incident-details", "style")],
+    [Input("map-graph", "clickData")],
+)
+
+def display_incident_details(clickData):
+    # Log the received clickData to the console
+    print("DEBUG: Received clickData =", clickData)
+
+    if clickData is None:
+        return "", {"display": "none"}  # Hide the widget when no click
+
+    try:
+        lat = clickData["points"][0]["lat"]
+        lon = clickData["points"][0]["lon"]
+    except (KeyError, IndexError) as e:
+        print("DEBUG: Error accessing clickData", e)
+        return "Error reading incident data.", {"display": "block"}
+
+    incidents = df[(df["Latitude"] == lat) & (df["Longitude"] == lon)]
+    print("DEBUG: Filtered incidents =", incidents)
+
+    if incidents.empty:
+        return "No incidents found for this location.", {"display": "block"}
+
+    details = [
+        html.H4(f"Incidents at ({lat}, {lon})"),
+        html.Ul([html.Li(f"{row['Date'].date()}: {row['Shark.common.name']}") for _, row in incidents.iterrows()]),
+    ]
+
+    return details, {"display": "block"}
 
 if __name__ == "__main__":
     app.run_server(debug=True)
