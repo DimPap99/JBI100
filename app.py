@@ -58,7 +58,7 @@ species_image_map = {
     "school shark": "school-shark.jpg",
     "whaler shark": "bronze-whaler-shark.jpeg",
     "dusky shark": "dusky-shark.webp",
-    "hammerhead shark": "Hammerhead-shark.webp",  # removed trailing space
+    "hammerhead shark": "Hammerhead-shark.webp",
     "blind shark": "Blindshark.jpg",
     "bronze whaler shark": "bronze-whaler-shark.jpeg",
     "white shark": "White-shark.webp",
@@ -74,7 +74,7 @@ species_image_map = {
 
 def get_shark_image(species_name: str) -> str:
     """Return the filename for the shark image, default to 'unknown.webp' if no match."""
-    if not species_name:
+    if not species_name or not isinstance(species_name, str):
         return "unknown.webp"
     clean = species_name.strip().lower()
     return species_image_map.get(clean, "unknown.webp")
@@ -96,7 +96,6 @@ app.layout = html.Div([
                         id="date-picker",
                         min_date_allowed=dt(1791, 1, 1),
                         max_date_allowed=dt(2022, 12, 31),
-                        # Example: set an initial date that actually has data
                         initial_visible_month=dt(1803, 3, 1),
                         date=dt(1803, 3, 1).date(),
                         display_format="MMMM D, YYYY",
@@ -140,15 +139,27 @@ app.layout = html.Div([
         },
         children=[
             html.Button("Close", id="close-modal", style={"float": "right", "margin": "10px"}),
+
+            # Container for next/previous buttons
             html.Div(
                 style={"marginBottom": "10px", "textAlign": "center"},
                 children=[
-                    html.Button("Previous", id="prev-incident", n_clicks=0,
-                                style={"marginRight": "20px", "padding": "8px 16px"}),
-                    html.Button("Next", id="next-incident", n_clicks=0,
-                                style={"padding": "8px 16px"}),
+                    # We'll hide or show these buttons dynamically via their style
+                    html.Button(
+                        "Previous",
+                        id="prev-incident",
+                        n_clicks=0,
+                        style={"marginRight": "20px", "padding": "8px 16px"}
+                    ),
+                    html.Button(
+                        "Next",
+                        id="next-incident",
+                        n_clicks=0,
+                        style={"padding": "8px 16px"}
+                    ),
                 ],
             ),
+
             html.Div(id="modal-incident-content"),
         ],
     ),
@@ -168,7 +179,6 @@ def update_map(datePicked, selectedSpecies):
     # Filter by date (month/day)
     date_picked = pd.to_datetime(datePicked) if datePicked else None
     if date_picked:
-        # If your dataset doesn't have day-level detail, you can adapt here
         filtered_df = df[
             (df["Date"].dt.month == date_picked.month) &
             (df["Date"].dt.day == date_picked.day)
@@ -200,8 +210,8 @@ def update_map(datePicked, selectedSpecies):
         size="Incident Count",
         hover_name="Incident Count",
         color_discrete_sequence=["#636EFA"],
-        zoom=4,                        # default zoom
-        center={"lat": -25.0, "lon": 133.0},   # center on Australia
+        zoom=4,
+        center={"lat": -25.0, "lon": 133.0},  # center on Australia
         mapbox_style="open-street-map"
     )
     fig.update_traces(marker=dict(opacity=0.5))
@@ -217,11 +227,14 @@ def update_map(datePicked, selectedSpecies):
 #   - Filters for the clicked lat/lon
 #   - Opens/closes the modal
 #   - Handles Next/Previous
+#   - ALSO sets the style for prev/next buttons
 # ------------------------------------------------------------------------------
 @app.callback(
     Output("info-modal", "style"),
     Output("selected-incidents-store", "data"),
     Output("modal-incident-content", "children"),
+    Output("prev-incident", "style"),  # Hide/show "Previous"
+    Output("next-incident", "style"),  # Hide/show "Next"
     [
         Input("date-picker", "date"),
         Input("species-dropdown", "value"),
@@ -237,26 +250,28 @@ def handle_modal_and_incidents(
     close_clicks, prev_clicks, next_clicks,
     store_data
 ):
-    """Open/close modal and cycle through incidents that pass the date+species filter + lat/lon."""
+    """Open/close modal, cycle incidents, and hide 'Next'/'Prev' if no more incidents."""
     ctx = dash.callback_context
     if not ctx.triggered:
-        return {"display": "none"}, {"rows": [], "current_index": 0}, "No incident data available"
+        # Nothing happened yet
+        return {"display": "none"}, {"rows": [], "current_index": 0}, "No incident data available", {}, {}
 
     triggered_id = ctx.triggered[0]["prop_id"]
 
-    # Default style, store, content if nothing is found
+    # Default style, store, content
     default_style = {"display": "none"}
     default_store = {"rows": [], "current_index": 0}
     default_content = html.Div("No incident data available")
 
-    # 1) If the user clicked the Close button
-    if "close-modal" in triggered_id:
-        return default_style, default_store, default_content
+    # Default button styles: visible
+    prev_style = {"marginRight": "20px", "padding": "8px 16px"}
+    next_style = {"padding": "8px 16px"}
 
-    # ---------------------------------------------------------
-    # First, apply the same date+species filters to the DataFrame
-    # so we only show incidents that appear on the map
-    # ---------------------------------------------------------
+    # 1) If the user clicked Close
+    if "close-modal" in triggered_id:
+        return default_style, default_store, default_content, prev_style, next_style
+
+    # Filter by date + species
     date_picked = pd.to_datetime(datePicked) if datePicked else None
     if date_picked:
         filter_df = df[
@@ -269,8 +284,7 @@ def handle_modal_and_incidents(
     if selectedSpecies:
         filter_df = filter_df[filter_df["Shark.common.name"] == selectedSpecies]
 
-    # 2) If the map was clicked -> gather lat/lon from clickData,
-    #    filter further by lat/lon, and open the modal
+    # 2) If map was clicked => open modal with incidents at lat/lon
     if "map-graph.clickData" in triggered_id and clickData:
         lat_clicked = round(clickData["points"][0]["lat"], 5)
         lon_clicked = round(clickData["points"][0]["lon"], 5)
@@ -295,11 +309,14 @@ def handle_modal_and_incidents(
             })
 
         if not rows:
-            # No data -> show "No incident data"
-            return default_style, default_store, default_content
+            # No data => no modal
+            return default_style, default_store, default_content, prev_style, next_style
 
         new_store = {"rows": rows, "current_index": 0}
         content = build_modal_content(rows, 0)
+
+        # Next/Prev button logic for first display
+        prev_style, next_style = get_nav_button_styles(len(rows), 0, prev_style, next_style)
 
         modal_style = {
             "display": "block",
@@ -314,16 +331,14 @@ def handle_modal_and_incidents(
             "padding": "20px",
             "borderRadius": "10px",
         }
-        return modal_style, new_store, content
+        return modal_style, new_store, content, prev_style, next_style
 
-    # 3) If Prev/Next was clicked -> update current_index in store
+    # 3) If Prev/Next was clicked => cycle
     rows = store_data.get("rows", [])
     current_idx = store_data.get("current_index", 0)
     if not rows:
-        # No data to show
-        return default_style, default_store, default_content
+        return default_style, default_store, default_content, prev_style, next_style
 
-    # The modal remains open if we have data
     modal_style = {
         "display": "block",
         "position": "fixed",
@@ -346,7 +361,10 @@ def handle_modal_and_incidents(
     updated_store = {"rows": rows, "current_index": current_idx}
     content = build_modal_content(rows, current_idx)
 
-    return modal_style, updated_store, content
+    # Hide next/prev if there is none
+    prev_style, next_style = get_nav_button_styles(len(rows), current_idx, prev_style, next_style)
+
+    return modal_style, updated_store, content, prev_style, next_style
 
 # ------------------------------------------------------------------------------
 # Helper Function: Build the modal's content for a given incident row
@@ -391,6 +409,42 @@ def build_modal_content(rows, idx):
             ),
         ]
     )
+
+# ------------------------------------------------------------------------------
+# Helper Function: Decide how to show/hide "Prev" / "Next" buttons
+# ------------------------------------------------------------------------------
+def get_nav_button_styles(num_rows, current_idx, prev_style, next_style):
+    """
+    If there's only 1 row, hide both buttons.
+    If current_idx == 0, hide "Previous".
+    If current_idx == num_rows - 1, hide "Next".
+    Otherwise, show them both.
+    """
+    # Start by showing them
+    prev_style = prev_style.copy()
+    next_style = next_style.copy()
+
+    if num_rows <= 1:
+        # No need for prev or next if 0 or 1 incident
+        prev_style["display"] = "none"
+        next_style["display"] = "none"
+        return prev_style, next_style
+
+    # More than 1 row:
+    # Hide 'Prev' if we're on the first
+    if current_idx == 0:
+        prev_style["display"] = "none"
+    else:
+        prev_style.pop("display", None)  # remove any 'display' override
+
+    # Hide 'Next' if we're on the last
+    if current_idx == num_rows - 1:
+        next_style["display"] = "none"
+    else:
+        next_style.pop("display", None)
+
+    return prev_style, next_style
+
 
 # ------------------------------------------------------------------------------
 # Run the App
