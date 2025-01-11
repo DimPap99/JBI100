@@ -70,6 +70,7 @@ def get_shark_image(species_name: str) -> str:
     clean = species_name.strip().lower()
     return species_image_map.get(clean, "unknown.webp")
 
+
 # ------------------------------------------------------------------------------
 # Layout
 # ------------------------------------------------------------------------------
@@ -105,7 +106,18 @@ app.layout = html.Div([
                                     value=str(unique_dates[-1].date()),
                                     style={"marginRight": "10px", "width": "120px"}
                                 ),
-                                html.Button("Apply", id="apply-date-button", n_clicks=0, style={"marginLeft": "10px"})
+                                html.Button(
+                                    "Apply",
+                                    id="apply-date-button",
+                                    n_clicks=0,
+                                    style={"marginLeft": "10px"}
+                                ),
+                                html.Button(
+                                    "Reset",
+                                    id="reset-button",
+                                    n_clicks=0,
+                                    style={"marginLeft": "10px"}
+                                ),
                             ], style={"marginBottom": "15px", "display": "flex", "alignItems": "center"}),
 
                             dcc.RangeSlider(
@@ -204,8 +216,9 @@ app.layout = html.Div([
     ),
 
     dcc.Store(id="selected-incidents-store", data={"rows": [], "current_index": 0}),
-    # NEW: A store for the *fully filtered* data (date range, species, box select, pie click)
     dcc.Store(id="filtered-data-store"),
+    # SINGLE store for highlighting the pie-clicked species
+    dcc.Store(id="pie-selected-species", data=None),
 
     html.Div(
         id="info-modal",
@@ -248,51 +261,129 @@ app.layout = html.Div([
 
 
 # ------------------------------------------------------------------------------
-# 1) Sync RangeSlider & Start/End Inputs
+# 1) Single Callback to Handle "Apply" AND "Reset" for Date/Species
+#    (But *not* for pie-selected-species — see next callback)
 # ------------------------------------------------------------------------------
 @app.callback(
-    [Output("start-date-input", "value"),
-     Output("end-date-input", "value"),
-     Output("date-slider", "value")],
-    [Input("apply-date-button", "n_clicks")],
-    [State("start-date-input", "value"),
-     State("end-date-input", "value"),
-     State("date-slider", "value")]
+    [
+        Output("start-date-input", "value"),
+        Output("end-date-input", "value"),
+        Output("date-slider", "value"),
+        Output("species-dropdown", "value"),
+        Output("map-graph", "selectedData"),
+    ],
+    [
+        Input("apply-date-button", "n_clicks"),
+        Input("reset-button", "n_clicks"),
+    ],
+    [
+        State("start-date-input", "value"),
+        State("end-date-input", "value"),
+        State("date-slider", "value"),
+    ],
+    prevent_initial_call=True
 )
-def synchronize_inputs_and_slider(n_clicks, start_date, end_date, slider_range):
-    if n_clicks == 0:
+def apply_or_reset(apply_clicks, reset_clicks,
+                   current_start_date, current_end_date, current_slider):
+    ctx = dash.callback_context
+    if not ctx.triggered:
         raise dash.exceptions.PreventUpdate
 
-    start_idx, end_idx = slider_range
+    triggered_id = ctx.triggered[0]["prop_id"].split(".")[0]
 
-    try:
-        start_idx = date_to_index[pd.to_datetime(start_date)]
-    except Exception:
-        start_date = index_to_date[start_idx].strftime("%Y-%m-%d")
+    if triggered_id == "apply-date-button":
+        # "Apply" => sync date inputs & slider.
+        try:
+            start_idx = date_to_index[pd.to_datetime(current_start_date)]
+        except Exception:
+            start_idx = current_slider[0]
+            current_start_date = index_to_date[start_idx].strftime("%Y-%m-%d")
 
-    try:
-        end_idx = date_to_index[pd.to_datetime(end_date)]
-    except Exception:
-        end_date = index_to_date[end_idx].strftime("%Y-%m-%d")
+        try:
+            end_idx = date_to_index[pd.to_datetime(current_end_date)]
+        except Exception:
+            end_idx = current_slider[1]
+            current_end_date = index_to_date[end_idx].strftime("%Y-%m-%d")
 
-    # Ensure in bounds
-    start_idx = max(0, min(start_idx, len(unique_dates) - 1))
-    end_idx = max(0, min(end_idx, len(unique_dates) - 1))
+        # Ensure in bounds
+        start_idx = max(0, min(start_idx, len(unique_dates) - 1))
+        end_idx = max(0, min(end_idx, len(unique_dates) - 1))
 
-    # If reversed, swap
-    if start_idx > end_idx:
-        start_idx, end_idx = end_idx, start_idx
+        # If reversed, swap
+        if start_idx > end_idx:
+            start_idx, end_idx = end_idx, start_idx
 
-    # Final date strings
-    start_date = index_to_date[start_idx].strftime("%Y-%m-%d")
-    end_date = index_to_date[end_idx].strftime("%Y-%m-%d")
+        new_start_date = index_to_date[start_idx].strftime("%Y-%m-%d")
+        new_end_date = index_to_date[end_idx].strftime("%Y-%m-%d")
+        new_slider = [start_idx, end_idx]
 
-    return start_date, end_date, [start_idx, end_idx]
+        return (
+            new_start_date,
+            new_end_date,
+            new_slider,
+            dash.no_update,  # keep species dropdown as-is
+            dash.no_update,  # keep map selection as-is
+        )
+
+    elif triggered_id == "reset-button":
+        # "Reset" => revert everything to default
+        default_start = str(unique_dates[0].date())
+        default_end = str(unique_dates[-1].date())
+        default_slider_range = [0, len(unique_dates) - 1]
+        default_species = []
+        default_map_selection = None
+
+        return (
+            default_start,
+            default_end,
+            default_slider_range,
+            default_species,
+            default_map_selection,
+        )
+
+    raise dash.exceptions.PreventUpdate
 
 
 # ------------------------------------------------------------------------------
-# 2) Master Callback -> Update Shared Filtered Data
-#    (Date range, species, map box-select, pie chart click)
+# 2) COMBINED callback for pie-chart click + reset => set pie-selected-species
+# ------------------------------------------------------------------------------
+@app.callback(
+    Output("pie-selected-species", "data"),
+    [
+        Input("pie-chart", "clickData"),
+        Input("reset-button", "n_clicks"),
+    ],
+    prevent_initial_call=True
+)
+def handle_pie_click_and_reset(pie_click, reset_clicks):
+    """
+    Single callback that updates `pie-selected-species`:
+    - If user clicks a slice on the pie => set that species
+    - If user clicks "Reset" => clear (set to None)
+    """
+    ctx = dash.callback_context
+    if not ctx.triggered:
+        raise dash.exceptions.PreventUpdate
+
+    triggered_id = ctx.triggered[0]["prop_id"].split(".")[0]
+
+    if triggered_id == "pie-chart":
+        # user clicked on pie
+        if pie_click and "points" in pie_click:
+            points = pie_click["points"]
+            if points:
+                return points[0].get("label")  # e.g. "white shark"
+        return dash.no_update
+
+    elif triggered_id == "reset-button":
+        # user clicked "Reset"
+        return None
+
+    raise dash.exceptions.PreventUpdate
+
+
+# ------------------------------------------------------------------------------
+# 3) “Master” Filtering Callback (Date range, species, map box-select)
 # ------------------------------------------------------------------------------
 @app.callback(
     Output("filtered-data-store", "data"),
@@ -300,10 +391,9 @@ def synchronize_inputs_and_slider(n_clicks, start_date, end_date, slider_range):
         Input("date-slider", "value"),
         Input("species-dropdown", "value"),
         Input("map-graph", "selectedData"),
-        Input("pie-chart", "clickData"),
     ]
 )
-def update_filtered_data_store(slider_range, selected_species, map_selected, pie_click):
+def update_filtered_data_store(slider_range, selected_species, map_selected):
     # Start with full dataset
     filtered_df_local = df.copy()
 
@@ -323,7 +413,6 @@ def update_filtered_data_store(slider_range, selected_species, map_selected, pie
         ]
 
     # 3) Filter by map box selection
-    #    If user box-selected on the map, we only keep those lat/lon
     if map_selected and "points" in map_selected:
         points = map_selected["points"]
         if points:  # user actually box-selected something
@@ -334,75 +423,12 @@ def update_filtered_data_store(slider_range, selected_species, map_selected, pie
                 filtered_df_local["Longitude"].isin(lons)
             ]
 
-    # 4) Filter by pie chart click
-    #    If user clicked a species slice on the pie chart, filter further to that species
-    if pie_click and "points" in pie_click:
-        # Usually only one point in a pie click, but let's be safe
-        click_points = pie_click["points"]
-        if click_points:
-            clicked_species = click_points[0].get("label")  # species name
-            if clicked_species:
-                filtered_df_local = filtered_df_local[
-                    filtered_df_local["Shark.common.name"] == clicked_species
-                ]
-
     # Return the final subset as JSON-ish (list of dicts)
     return filtered_df_local.to_dict("records")
 
 
 # ------------------------------------------------------------------------------
-# 3) Update Map from the Filtered Data in the Store
-# ------------------------------------------------------------------------------
-@app.callback(
-    Output("map-graph", "figure"),
-    Input("filtered-data-store", "data")
-)
-def update_map_from_filtered_data(filtered_data):
-    if not filtered_data:
-        # Return an empty-like figure
-        return px.scatter_mapbox(
-            pd.DataFrame({"Latitude": [], "Longitude": [], "Incident Count": []}),
-            lat="Latitude", lon="Longitude", size="Incident Count",
-            zoom=4, center={"lat": -25.0, "lon": 133.0},
-            mapbox_style="open-street-map",
-            title="No Data"
-        )
-
-    filtered_df_local = pd.DataFrame(filtered_data)
-    if filtered_df_local.empty:
-        return px.scatter_mapbox(
-            pd.DataFrame({"Latitude": [], "Longitude": [], "Incident Count": []}),
-            lat="Latitude", lon="Longitude", size="Incident Count",
-            zoom=4, center={"lat": -25.0, "lon": 133.0},
-            mapbox_style="open-street-map",
-            title="No Data"
-        )
-
-    # Group for bubble sizing
-    bubble_data = filtered_df_local.groupby(["Latitude", "Longitude"]).size().reset_index(name="Incident Count")
-
-    fig = px.scatter_mapbox(
-        bubble_data,
-        lat="Latitude",
-        lon="Longitude",
-        size="Incident Count",
-        hover_name="Incident Count",
-        color_discrete_sequence=["#636EFA"],
-        zoom=4,
-        center={"lat": -25.0, "lon": 133.0},
-        mapbox_style="open-street-map"
-    )
-    fig.update_traces(marker=dict(opacity=0.5))
-    fig.update_layout(
-        title="Shark Incidents Density",
-        margin={"r": 0, "t": 0, "l": 0, "b": 0},
-        dragmode="select"  # Enable box select
-    )
-    return fig
-
-
-# ------------------------------------------------------------------------------
-# 4) Update Pie Chart from the Filtered Data in the Store
+# 4) Update Pie Chart from the *currently filtered data*
 # ------------------------------------------------------------------------------
 @app.callback(
     Output("pie-chart", "figure"),
@@ -425,7 +451,77 @@ def update_pie_chart_from_filtered_data(filtered_data):
 
 
 # ------------------------------------------------------------------------------
-# 5) Modal + Blur Logic (unchanged)
+# 5) Update the Map to highlight pie-clicked species if any
+# ------------------------------------------------------------------------------
+@app.callback(
+    Output("map-graph", "figure"),
+    [
+        Input("filtered-data-store", "data"),
+        Input("pie-selected-species", "data")
+    ]
+)
+def update_map_from_filtered_data_and_pie_click(filtered_data, pie_selected):
+    if not filtered_data:
+        return px.scatter_mapbox(
+            pd.DataFrame({"Latitude": [], "Longitude": [], "Incident Count": []}),
+            lat="Latitude", lon="Longitude", size="Incident Count",
+            zoom=4, center={"lat": -25.0, "lon": 133.0},
+            mapbox_style="open-street-map",
+            title="No Data"
+        )
+
+    df_local = pd.DataFrame(filtered_data)
+    if df_local.empty:
+        return px.scatter_mapbox(
+            pd.DataFrame({"Latitude": [], "Longitude": [], "Incident Count": []}),
+            lat="Latitude", lon="Longitude", size="Incident Count",
+            zoom=4, center={"lat": -25.0, "lon": 133.0},
+            mapbox_style="open-street-map",
+            title="No Data"
+        )
+
+    bubble_data = df_local.groupby(["Latitude", "Longitude", "Shark.common.name"]).size().reset_index(name="Count")
+
+    # If the user clicked the pie => highlight only that species
+    if pie_selected:
+        bubble_data["Highlight"] = bubble_data["Shark.common.name"].apply(
+            lambda x: "Selected" if x == pie_selected else "Other"
+        )
+    else:
+        bubble_data["Highlight"] = "Other"  # no pie selection => all are "Other"
+
+    fig = px.scatter_mapbox(
+        bubble_data,
+        lat="Latitude",
+        lon="Longitude",
+        size="Count",
+        hover_name="Count",
+        color="Highlight",  # color by whether it's the clicked species or not
+        zoom=4,
+        center={"lat": -25.0, "lon": 133.0},
+        mapbox_style="open-street-map"
+    )
+    # Let's adjust the color scale so that "Selected" is bright red, "Other" is blue
+    fig.update_traces(marker=dict(opacity=0.6), selector=dict(mode='markers'))
+    fig.update_layout(
+        coloraxis=dict(
+            colorscale=[
+                [0, "blue"],      # 'Other'
+                [0.5, "blue"],
+                [0.5, "red"],     # 'Selected'
+                [1, "red"],
+            ],
+            showscale=False,
+        ),
+        title="Shark Incidents Density",
+        margin={"r": 0, "t": 0, "l": 0, "b": 0},
+        dragmode="select"
+    )
+    return fig
+
+
+# ------------------------------------------------------------------------------
+# 6) Modal + Blur Logic (unchanged)
 # ------------------------------------------------------------------------------
 @app.callback(
     Output("info-modal", "style"),
