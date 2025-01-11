@@ -70,7 +70,6 @@ def get_shark_image(species_name: str) -> str:
     clean = species_name.strip().lower()
     return species_image_map.get(clean, "unknown.webp")
 
-
 # ------------------------------------------------------------------------------
 # Layout
 # ------------------------------------------------------------------------------
@@ -122,12 +121,11 @@ app.layout = html.Div([
                             ),
 
                             html.P("Filter by shark species:"),
-                            # MULTIPLE SELECTION HERE
                             dcc.Dropdown(
                                 id="species-dropdown",
                                 options=species_options,
                                 placeholder="Select Shark Species",
-                                multi=True,  # <<<<------
+                                multi=True,
                             ),
                         ],
                     ),
@@ -206,6 +204,8 @@ app.layout = html.Div([
     ),
 
     dcc.Store(id="selected-incidents-store", data={"rows": [], "current_index": 0}),
+    # NEW: A store for the *fully filtered* data (date range, species, box select, pie click)
+    dcc.Store(id="filtered-data-store"),
 
     html.Div(
         id="info-modal",
@@ -291,38 +291,95 @@ def synchronize_inputs_and_slider(n_clicks, start_date, end_date, slider_range):
 
 
 # ------------------------------------------------------------------------------
-# 2) Update Map based on RangeSlider & Multi-Species
+# 2) Master Callback -> Update Shared Filtered Data
+#    (Date range, species, map box-select, pie chart click)
+# ------------------------------------------------------------------------------
+@app.callback(
+    Output("filtered-data-store", "data"),
+    [
+        Input("date-slider", "value"),
+        Input("species-dropdown", "value"),
+        Input("map-graph", "selectedData"),
+        Input("pie-chart", "clickData"),
+    ]
+)
+def update_filtered_data_store(slider_range, selected_species, map_selected, pie_click):
+    # Start with full dataset
+    filtered_df_local = df.copy()
+
+    # 1) Filter by date range
+    if slider_range:
+        start_date = index_to_date[slider_range[0]]
+        end_date = index_to_date[slider_range[1]]
+        filtered_df_local = filtered_df_local[
+            (filtered_df_local["Date"] >= start_date) &
+            (filtered_df_local["Date"] <= end_date)
+        ]
+
+    # 2) Filter by species dropdown
+    if selected_species:
+        filtered_df_local = filtered_df_local[
+            filtered_df_local["Shark.common.name"].isin(selected_species)
+        ]
+
+    # 3) Filter by map box selection
+    #    If user box-selected on the map, we only keep those lat/lon
+    if map_selected and "points" in map_selected:
+        points = map_selected["points"]
+        if points:  # user actually box-selected something
+            lats = [round(pt["lat"], 5) for pt in points]
+            lons = [round(pt["lon"], 5) for pt in points]
+            filtered_df_local = filtered_df_local[
+                filtered_df_local["Latitude"].isin(lats) &
+                filtered_df_local["Longitude"].isin(lons)
+            ]
+
+    # 4) Filter by pie chart click
+    #    If user clicked a species slice on the pie chart, filter further to that species
+    if pie_click and "points" in pie_click:
+        # Usually only one point in a pie click, but let's be safe
+        click_points = pie_click["points"]
+        if click_points:
+            clicked_species = click_points[0].get("label")  # species name
+            if clicked_species:
+                filtered_df_local = filtered_df_local[
+                    filtered_df_local["Shark.common.name"] == clicked_species
+                ]
+
+    # Return the final subset as JSON-ish (list of dicts)
+    return filtered_df_local.to_dict("records")
+
+
+# ------------------------------------------------------------------------------
+# 3) Update Map from the Filtered Data in the Store
 # ------------------------------------------------------------------------------
 @app.callback(
     Output("map-graph", "figure"),
-    [Input("date-slider", "value"),
-     Input("species-dropdown", "value")]
+    Input("filtered-data-store", "data")
 )
-def update_map(slider_range, selected_species):
-    """
-    slider_range is [start_idx, end_idx]
-    selected_species can be a list of species or None.
-    """
-    if not slider_range:
-        filtered_df = df.copy()
-    else:
-        start_date = index_to_date[slider_range[0]]
-        end_date = index_to_date[slider_range[1]]
-        filtered_df = df[(df["Date"] >= start_date) & (df["Date"] <= end_date)]
-
-    if selected_species:
-        # For multiple species, we filter via .isin(list_of_species)
-        filtered_df = filtered_df[filtered_df["Shark.common.name"].isin(selected_species)]
-
-    if filtered_df.empty:
+def update_map_from_filtered_data(filtered_data):
+    if not filtered_data:
+        # Return an empty-like figure
         return px.scatter_mapbox(
             pd.DataFrame({"Latitude": [], "Longitude": [], "Incident Count": []}),
             lat="Latitude", lon="Longitude", size="Incident Count",
             zoom=4, center={"lat": -25.0, "lon": 133.0},
-            mapbox_style="open-street-map"
+            mapbox_style="open-street-map",
+            title="No Data"
         )
 
-    bubble_data = filtered_df.groupby(["Latitude", "Longitude"]).size().reset_index(name="Incident Count")
+    filtered_df_local = pd.DataFrame(filtered_data)
+    if filtered_df_local.empty:
+        return px.scatter_mapbox(
+            pd.DataFrame({"Latitude": [], "Longitude": [], "Incident Count": []}),
+            lat="Latitude", lon="Longitude", size="Incident Count",
+            zoom=4, center={"lat": -25.0, "lon": 133.0},
+            mapbox_style="open-street-map",
+            title="No Data"
+        )
+
+    # Group for bubble sizing
+    bubble_data = filtered_df_local.groupby(["Latitude", "Longitude"]).size().reset_index(name="Incident Count")
 
     fig = px.scatter_mapbox(
         bubble_data,
@@ -339,13 +396,36 @@ def update_map(slider_range, selected_species):
     fig.update_layout(
         title="Shark Incidents Density",
         margin={"r": 0, "t": 0, "l": 0, "b": 0},
-        dragmode="select"
+        dragmode="select"  # Enable box select
     )
     return fig
 
 
 # ------------------------------------------------------------------------------
-# 3) Modal + Blur Logic (unchanged)
+# 4) Update Pie Chart from the Filtered Data in the Store
+# ------------------------------------------------------------------------------
+@app.callback(
+    Output("pie-chart", "figure"),
+    Input("filtered-data-store", "data")
+)
+def update_pie_chart_from_filtered_data(filtered_data):
+    if not filtered_data:
+        empty_df = pd.DataFrame({"Shark.common.name": [], "Count": []})
+        return px.pie(empty_df, names="Shark.common.name", values="Count", title="No Data")
+
+    filtered_df_local = pd.DataFrame(filtered_data)
+    if filtered_df_local.empty:
+        empty_df = pd.DataFrame({"Shark.common.name": [], "Count": []})
+        return px.pie(empty_df, names="Shark.common.name", values="Count", title="No Data")
+
+    pie_data = filtered_df_local.groupby("Shark.common.name").size().reset_index(name="Count")
+    fig = px.pie(pie_data, names="Shark.common.name", values="Count", title="Shark Species (Filtered)")
+    fig.update_traces(textposition='inside', textinfo='percent+label')
+    return fig
+
+
+# ------------------------------------------------------------------------------
+# 5) Modal + Blur Logic (unchanged)
 # ------------------------------------------------------------------------------
 @app.callback(
     Output("info-modal", "style"),
@@ -538,34 +618,6 @@ def get_nav_button_styles(num_rows, current_idx, prev_style, next_style):
 
     return prev_style, next_style
 
-# ------------------------------------------------------------------------------
-# 4) Box-select => Update Pie Chart
-# ------------------------------------------------------------------------------
-@app.callback(
-    Output("pie-chart", "figure"),
-    Input("map-graph", "selectedData")
-)
-def update_pie_chart(selectedData):
-    if not selectedData or "points" not in selectedData:
-        empty_df = pd.DataFrame({"Shark.common.name": [], "Count": []})
-        return px.pie(empty_df, names="Shark.common.name", values="Count", title="No Box Selection")
-
-    points = selectedData["points"]
-    if not points:
-        empty_df = pd.DataFrame({"Shark.common.name": [], "Count": []})
-        return px.pie(empty_df, names="Shark.common.name", values="Count", title="No Box Selection")
-
-    lats = [round(pt["lat"], 5) for pt in points]
-    lons = [round(pt["lon"], 5) for pt in points]
-    filtered_df = df[df["Latitude"].isin(lats) & df["Longitude"].isin(lons)]
-    if filtered_df.empty:
-        empty_df = pd.DataFrame({"Shark.common.name": [], "Count": []})
-        return px.pie(empty_df, names="Shark.common.name", values="Count", title="No Data for Selection")
-
-    pie_data = filtered_df.groupby("Shark.common.name").size().reset_index(name="Count")
-    fig = px.pie(pie_data, names="Shark.common.name", values="Count", title="Shark Species in Box-Selected Area")
-    fig.update_traces(textposition='inside', textinfo='percent+label')
-    return fig
 
 # ------------------------------------------------------------------------------
 # Run
