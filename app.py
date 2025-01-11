@@ -26,7 +26,7 @@ df["Date"] = pd.to_datetime(
     errors="coerce"
 )
 
-# Sort by date to build the slider
+# Sort for RangeSlider
 df = df.sort_values("Date")
 unique_dates = df["Date"].dropna().unique()
 date_to_index = {date: i for i, date in enumerate(unique_dates)}
@@ -37,7 +37,6 @@ species_options = [
     for s in df["Shark.common.name"].dropna().unique()
 ]
 
-# Simple dict for images
 species_image_map = {
     "grey reef shark": "gray-reef-shark.webp",
     "dogfish": "dogfish.webp",
@@ -76,8 +75,6 @@ def get_shark_image(species_name: str) -> str:
 # Layout
 # ------------------------------------------------------------------------------
 app.layout = html.Div([
-
-    # Everything in a container we can blur
     html.Div(
         id="background-container",
         children=[
@@ -90,7 +87,7 @@ app.layout = html.Div([
                         children=[
                             html.H2("DASH - SHARK INCIDENT DATA"),
 
-                            # -- Date Range: inputs + RangeSlider
+                            # Date Range (RangeSlider + inputs)
                             html.P("Select a date range to filter incidents."),
                             html.Div([
                                 html.Label("Start Date:"),
@@ -124,29 +121,29 @@ app.layout = html.Div([
                                 tooltip={"placement": "bottom", "always_visible": True},
                             ),
 
-                            # -- Species filter
                             html.P("Filter by shark species:"),
+                            # MULTIPLE SELECTION HERE
                             dcc.Dropdown(
                                 id="species-dropdown",
                                 options=species_options,
-                                placeholder="Select a Shark Species",
+                                placeholder="Select Shark Species",
+                                multi=True,  # <<<<------
                             ),
                         ],
                     ),
 
-                    # Right Column (Map + Charts)
+                    # Right Column (Map + 2 Charts)
                     html.Div(
                         className="eight columns div-for-charts bg-grey",
                         style={
                             "display": "flex",
                             "flexDirection": "column",
-                            # Keep the same styling from your code
                             "height": "100vh",
                             "padding": "10px",
                             "overflowY": "auto",
                         },
                         children=[
-                            # Map: top ~50%
+                            # Map: ~ top 50%
                             html.Div(
                                 style={"flex": "0 0 50%", "marginBottom": "10px"},
                                 children=[
@@ -157,7 +154,7 @@ app.layout = html.Div([
                                     )
                                 ]
                             ),
-                            # Two charts below (left: Pie, right: placeholder)
+                            # Pie chart + second chart side by side
                             html.Div(
                                 style={
                                     "flex": "0 0 50%",
@@ -167,7 +164,7 @@ app.layout = html.Div([
                                     "justifyContent": "space-between",
                                 },
                                 children=[
-                                    # Chart 1 (Pie)
+                                    # Pie chart
                                     html.Div(
                                         style={"flex": "1", "marginRight": "5px"},
                                         children=[
@@ -181,7 +178,7 @@ app.layout = html.Div([
                                             )
                                         ]
                                     ),
-                                    # Chart 2 (Placeholder)
+                                    # Placeholder second chart
                                     html.Div(
                                         style={"flex": "1", "marginLeft": "5px"},
                                         children=[
@@ -208,10 +205,8 @@ app.layout = html.Div([
         ],
     ),
 
-    # Store for clicked bubble incidents
     dcc.Store(id="selected-incidents-store", data={"rows": [], "current_index": 0}),
 
-    # Modal
     html.Div(
         id="info-modal",
         style={
@@ -251,6 +246,7 @@ app.layout = html.Div([
     ),
 ])
 
+
 # ------------------------------------------------------------------------------
 # 1) Sync RangeSlider & Start/End Inputs
 # ------------------------------------------------------------------------------
@@ -264,17 +260,10 @@ app.layout = html.Div([
      State("date-slider", "value")]
 )
 def synchronize_inputs_and_slider(n_clicks, start_date, end_date, slider_range):
-    """
-    Keeps the text inputs and the date-slider in sync.
-    If user clicks "Apply," we parse the text dates, convert
-    them to indices for the slider, or revert if invalid.
-    """
     if n_clicks == 0:
         raise dash.exceptions.PreventUpdate
 
-    # Get current slider start/end from state
-    start_idx = slider_range[0]
-    end_idx = slider_range[1]
+    start_idx, end_idx = slider_range
 
     try:
         start_idx = date_to_index[pd.to_datetime(start_date)]
@@ -286,11 +275,11 @@ def synchronize_inputs_and_slider(n_clicks, start_date, end_date, slider_range):
     except Exception:
         end_date = index_to_date[end_idx].strftime("%Y-%m-%d")
 
-    # Ensure indices are within range
+    # Ensure in bounds
     start_idx = max(0, min(start_idx, len(unique_dates) - 1))
     end_idx = max(0, min(end_idx, len(unique_dates) - 1))
 
-    # Sort them if out of order
+    # If reversed, swap
     if start_idx > end_idx:
         start_idx, end_idx = end_idx, start_idx
 
@@ -302,7 +291,7 @@ def synchronize_inputs_and_slider(n_clicks, start_date, end_date, slider_range):
 
 
 # ------------------------------------------------------------------------------
-# 2) Update Map based on RangeSlider & Species
+# 2) Update Map based on RangeSlider & Multi-Species
 # ------------------------------------------------------------------------------
 @app.callback(
     Output("map-graph", "figure"),
@@ -311,10 +300,10 @@ def synchronize_inputs_and_slider(n_clicks, start_date, end_date, slider_range):
 )
 def update_map(slider_range, selected_species):
     """
-    Filter df by start/end from the slider, then by species if selected.
+    slider_range is [start_idx, end_idx]
+    selected_species can be a list of species or None.
     """
     if not slider_range:
-        # If no slider info, just return empty or entire df
         filtered_df = df.copy()
     else:
         start_date = index_to_date[slider_range[0]]
@@ -322,10 +311,10 @@ def update_map(slider_range, selected_species):
         filtered_df = df[(df["Date"] >= start_date) & (df["Date"] <= end_date)]
 
     if selected_species:
-        filtered_df = filtered_df[filtered_df["Shark.common.name"] == selected_species]
+        # For multiple species, we filter via .isin(list_of_species)
+        filtered_df = filtered_df[filtered_df["Shark.common.name"].isin(selected_species)]
 
     if filtered_df.empty:
-        # Return an empty figure if no data
         return px.scatter_mapbox(
             pd.DataFrame({"Latitude": [], "Longitude": [], "Incident Count": []}),
             lat="Latitude", lon="Longitude", size="Incident Count",
@@ -334,6 +323,7 @@ def update_map(slider_range, selected_species):
         )
 
     bubble_data = filtered_df.groupby(["Latitude", "Longitude"]).size().reset_index(name="Incident Count")
+
     fig = px.scatter_mapbox(
         bubble_data,
         lat="Latitude",
@@ -379,11 +369,6 @@ def handle_modal_and_incidents(
     close_clicks, prev_clicks, next_clicks,
     store_data
 ):
-    """
-    Same logic as before, except we no longer reference 'date-picker'.
-    We do, however, still filter data by the current slider range & species
-    to get the relevant incidents for the clicked coordinate.
-    """
     ctx = dash.callback_context
     if not ctx.triggered:
         return {"display": "none"}, {"rows": [], "current_index": 0}, "No incident data available", {}, {}, ""
@@ -400,11 +385,11 @@ def handle_modal_and_incidents(
     prev_style = {"marginRight": "20px", "padding": "8px 16px"}
     next_style = {"padding": "8px 16px"}
 
-    # Close modal
+    # If user closed
     if "close-modal" in triggered_id:
         return default_style, default_store, default_content, prev_style, next_style, no_blur
 
-    # Filter df by slider
+    # Filter by slider
     if slider_range:
         start_date = index_to_date[slider_range[0]]
         end_date = index_to_date[slider_range[1]]
@@ -412,8 +397,9 @@ def handle_modal_and_incidents(
     else:
         filter_df = df.copy()
 
+    # Filter by multi-species
     if selectedSpecies:
-        filter_df = filter_df[filter_df["Shark.common.name"] == selectedSpecies]
+        filter_df = filter_df[filter_df["Shark.common.name"].isin(selectedSpecies)]
 
     # If map clicked => open modal
     if "map-graph.clickData" in triggered_id and clickData:
@@ -443,8 +429,8 @@ def handle_modal_and_incidents(
 
         new_store = {"rows": rows, "current_index": 0}
         content = build_modal_content(rows, 0)
-        prev_style, next_style = get_nav_button_styles(len(rows), 0, prev_style, next_style)
 
+        prev_style, next_style = get_nav_button_styles(len(rows), 0, prev_style, next_style)
         modal_style = {
             "display": "block",
             "position": "fixed",
@@ -493,7 +479,7 @@ def handle_modal_and_incidents(
 
 
 # ------------------------------------------------------------------------------
-# Helper: Build the modal's content
+# Helpers for Modal
 # ------------------------------------------------------------------------------
 def build_modal_content(rows, idx):
     if not rows or idx < 0 or idx >= len(rows):
@@ -531,9 +517,6 @@ def build_modal_content(rows, idx):
         ]
     )
 
-# ------------------------------------------------------------------------------
-# Helper: Show/hide "Prev"/"Next" buttons
-# ------------------------------------------------------------------------------
 def get_nav_button_styles(num_rows, current_idx, prev_style, next_style):
     prev_style = prev_style.copy()
     next_style = next_style.copy()
@@ -556,7 +539,7 @@ def get_nav_button_styles(num_rows, current_idx, prev_style, next_style):
     return prev_style, next_style
 
 # ------------------------------------------------------------------------------
-# 4) Box-select => Update Pie Chart (unchanged)
+# 4) Box-select => Update Pie Chart
 # ------------------------------------------------------------------------------
 @app.callback(
     Output("pie-chart", "figure"),
