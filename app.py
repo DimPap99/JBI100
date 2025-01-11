@@ -103,15 +103,6 @@ app.layout = html.Div([
     ),
 ])
 
-# CSS Styles (Place in `assets/style.css` file)
-"""
-#background-container {
-    transition: filter 0.3s ease;
-}
-#background-container.blurred {
-    filter: blur(5px);
-}
-"""
 
 # Callback to update the map
 @app.callback(
