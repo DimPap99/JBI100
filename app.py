@@ -20,6 +20,12 @@ df["Date"] = pd.to_datetime(
     errors="coerce"
 )
 
+# Create date indices for RangeSlider
+df = df.sort_values("Date")
+unique_dates = df["Date"].dropna().sort_values().unique()
+date_to_index = {date: i for i, date in enumerate(unique_dates)}
+index_to_date = {i: date for i, date in enumerate(unique_dates)}
+
 # Build the list of species for the dropdown
 species_options = [
     {"label": species, "value": species}
@@ -34,7 +40,7 @@ df["Longitude"] = pd.to_numeric(df["Longitude"], errors="coerce")
 # -----------------------
 app.layout = html.Div([
     html.Div(
-        id="background-container",  # Add an ID to the background container
+        id="background-container",
         children=[
             html.Div(
                 className="row",
@@ -44,14 +50,37 @@ app.layout = html.Div([
                         className="four columns div-user-controls",
                         children=[
                             html.H2("DASH - SHARK INCIDENT DATA"),
-                            html.P("Select a date (month/day) to filter incidents."),
-                            dcc.DatePickerSingle(
-                                id="date-picker",
-                                min_date_allowed=dt(1791, 1, 1),
-                                max_date_allowed=dt(2022, 12, 31),
-                                initial_visible_month=dt(2022, 1, 1),
-                                date=dt(2022, 1, 1).date(),
-                                display_format="MMMM D, YYYY",
+                            html.P("Select a date range to filter incidents."),
+                            html.Div([
+                                html.Label("Start Date:"),
+                                dcc.Input(
+                                    id="start-date-input",
+                                    type="text",
+                                    placeholder="YYYY-MM-DD",
+                                    value=str(unique_dates[0].date()),
+                                    style={"marginRight": "10px", "width": "120px"}
+                                ),
+                                html.Label("End Date:"),
+                                dcc.Input(
+                                    id="end-date-input",
+                                    type="text",
+                                    placeholder="YYYY-MM-DD",
+                                    value=str(unique_dates[-1].date()),
+                                    style={"marginRight": "10px", "width": "120px"}
+                                ),
+                                html.Button("Apply", id="apply-date-button", n_clicks=0, style={"marginLeft": "10px"})
+                            ], style={"marginBottom": "15px", "display": "flex", "alignItems": "center"}),
+                            dcc.RangeSlider(
+                                id="date-slider",
+                                min=0,
+                                max=len(unique_dates) - 1,
+                                value=[0, len(unique_dates) - 1],
+                                marks={
+                                    i: str(index_to_date[i].year)
+                                    for i in range(0, len(unique_dates), 50)  # Uniform intervals of 50 indices
+    
+                                },
+                                tooltip={"placement": "bottom", "always_visible": True},
                             ),
                             html.P("Filter by shark species:"),
                             dcc.Dropdown(
@@ -72,69 +101,64 @@ app.layout = html.Div([
             ),
         ],
     ),
-    
-    # Store for incidents
-    dcc.Store(id="selected-incidents-store", data={"rows": [], "current_index": 0}),
-
-    # Modal
-    html.Div(
-        id="info-modal",
-        style={
-            "display": "none",
-            "position": "fixed",
-            "top": "20%",
-            "left": "30%",
-            "width": "40%",
-            "height": "40%",
-            "backgroundColor": "white",
-            "boxShadow": "0px 0px 10px rgba(0, 0, 0, 0.5)",
-            "zIndex": 1000,
-            "padding": "20px",
-            "borderRadius": "10px",
-        },
-        children=[
-            html.Button("Close", id="close-modal", style={"float": "right", "margin": "10px"}),
-            html.Div([
-                html.Button("Previous", id="prev-incident", n_clicks=0, style={"marginRight": "10px"}),
-                html.Button("Next", id="next-incident", n_clicks=0)
-            ], style={"marginBottom": "10px"}),
-            html.Div(id="modal-incident-content"),
-        ],
-    ),
 ])
 
+# Synchronize inputs and slider
+@app.callback(
+    [Output("start-date-input", "value"),
+     Output("end-date-input", "value"),
+     Output("date-slider", "value")],
+    [Input("apply-date-button", "n_clicks")],
+    [State("start-date-input", "value"),
+     State("end-date-input", "value"),
+     State("date-slider", "value")]
+)
+def synchronize_inputs_and_slider(n_clicks, start_date, end_date, slider_range):
+    if n_clicks == 0:
+        raise dash.exceptions.PreventUpdate
 
-# Callback to update the map
+    # Initialize start and end indices based on current slider range
+    start_idx = slider_range[0]
+    end_idx = slider_range[1]
+
+    try:
+        # Parse start date from input
+        start_idx = date_to_index[pd.to_datetime(start_date)]
+    except Exception:
+        start_date = index_to_date[start_idx].strftime("%Y-%m-%d")
+
+    try:
+        # Parse end date from input
+        end_idx = date_to_index[pd.to_datetime(end_date)]
+    except Exception:
+        end_date = index_to_date[end_idx].strftime("%Y-%m-%d")
+
+    # Ensure indices are within range
+    start_idx = max(0, min(start_idx, len(unique_dates) - 1))
+    end_idx = max(0, min(end_idx, len(unique_dates) - 1))
+
+    # Finalize start and end dates
+    start_date = index_to_date[start_idx].strftime("%Y-%m-%d")
+    end_date = index_to_date[end_idx].strftime("%Y-%m-%d")
+
+    return start_date, end_date, [start_idx, end_idx]
+
+# Update the map based on slider and species selection
 @app.callback(
     Output("map-graph", "figure"),
-    Input("date-picker", "date"),
-    Input("species-dropdown", "value"),
-    Input("map-graph", "clickData"),
+    [Input("date-slider", "value"),
+     Input("species-dropdown", "value")]
 )
-def update_graph(datePicked, selectedSpecies, clickData):
-    date_picked = pd.to_datetime(datePicked)
-    if pd.isnull(date_picked):
-        filtered_df = df.copy()
-    else:
-        filtered_df = df[
-            (df["Date"].dt.month == date_picked.month) &
-            (df["Date"].dt.day == date_picked.day)
-        ]
+def update_map(slider_range, selected_species):
+    start_date = index_to_date[slider_range[0]]
+    end_date = index_to_date[slider_range[1]]
 
-    if selectedSpecies:
-        filtered_df = filtered_df[filtered_df["Shark.common.name"] == selectedSpecies]
+    filtered_df = df[(df["Date"] >= start_date) & (df["Date"] <= end_date)]
 
-    bubble_data = filtered_df.groupby(
-        ["Latitude", "Longitude"]
-    ).size().reset_index(name="Incident Count")
+    if selected_species:
+        filtered_df = filtered_df[filtered_df["Shark.common.name"] == selected_species]
 
-    zoom_level = 4
-    center = {"lat": -25.0, "lon": 133.0}
-
-    if clickData:
-        clicked_point = clickData["points"][0]
-        center = {"lat": float(clicked_point["lat"]), "lon": float(clicked_point["lon"])}
-        zoom_level = 8
+    bubble_data = filtered_df.groupby(["Latitude", "Longitude"]).size().reset_index(name="Incident Count")
 
     fig = px.scatter_mapbox(
         bubble_data,
@@ -143,8 +167,8 @@ def update_graph(datePicked, selectedSpecies, clickData):
         size="Incident Count",
         hover_name="Incident Count",
         color_discrete_sequence=["#636EFA"],
-        zoom=zoom_level,
-        center=center,
+        zoom=4,
+        center={"lat": -25.0, "lon": 133.0},
         mapbox_style="open-street-map",
     )
     fig.update_traces(marker=dict(opacity=0.5))
@@ -154,41 +178,5 @@ def update_graph(datePicked, selectedSpecies, clickData):
     )
     return fig
 
-# Callback to toggle modal and blur effect
-@app.callback(
-    Output("background-container", "className"),
-    Output("info-modal", "style"),
-    [
-        Input("map-graph", "clickData"),
-        Input("close-modal", "n_clicks"),
-    ],
-    prevent_initial_call=True,
-)
-def toggle_modal_and_blur(clickData, close_clicks):
-    ctx = dash.callback_context
-    if not ctx.triggered:
-        return "", {"display": "none"}
-
-    triggered_input = ctx.triggered[0]["prop_id"]
-    if "close-modal" in triggered_input:
-        return "", {"display": "none"}
-    elif "map-graph.clickData" in triggered_input and clickData:
-        return "blurred", {
-            "display": "block",
-            "position": "fixed",
-            "top": "20%",
-            "left": "30%",
-            "width": "40%",
-            "height": "40%",
-            "backgroundColor": "white",
-            "boxShadow": "0px 0px 10px rgba(0, 0, 0, 0.5)",
-            "zIndex": 1000,
-            "padding": "20px",
-            "borderRadius": "10px",
-        }
-
-    return "", {"display": "none"}
-
-# Run the app
 if __name__ == "__main__":
     app.run_server(debug=True)
