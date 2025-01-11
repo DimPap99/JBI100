@@ -42,7 +42,6 @@ species_options = [
 
 # ------------------------------------------------------------------------------
 # Species -> Image Filename Mapping
-# (Adjust to match your actual filenames in assets/images/)
 # ------------------------------------------------------------------------------
 species_image_map = {
     "grey reef shark": "gray-reef-shark.webp",
@@ -79,40 +78,48 @@ def get_shark_image(species_name: str) -> str:
     clean = species_name.strip().lower()
     return species_image_map.get(clean, "unknown.webp")
 
+
 # ------------------------------------------------------------------------------
 # Layout
 # ------------------------------------------------------------------------------
 app.layout = html.Div([
+    
+    # Wrap everything in a container we can blur
     html.Div(
-        className="row",
+        id="background-container",
         children=[
-            # Left Column (Controls)
             html.Div(
-                className="four columns div-user-controls",
+                className="row",
                 children=[
-                    html.H2("DASH - SHARK INCIDENT DATA"),
-                    html.P("Select a date (month/day) to filter incidents."),
-                    dcc.DatePickerSingle(
-                        id="date-picker",
-                        min_date_allowed=dt(1791, 1, 1),
-                        max_date_allowed=dt(2022, 12, 31),
-                        initial_visible_month=dt(1803, 3, 1),
-                        date=dt(1803, 3, 1).date(),
-                        display_format="MMMM D, YYYY",
+                    # Left Column (Controls)
+                    html.Div(
+                        className="four columns div-user-controls",
+                        children=[
+                            html.H2("DASH - SHARK INCIDENT DATA"),
+                            html.P("Select a date (month/day) to filter incidents."),
+                            dcc.DatePickerSingle(
+                                id="date-picker",
+                                min_date_allowed=dt(1791, 1, 1),
+                                max_date_allowed=dt(2022, 12, 31),
+                                initial_visible_month=dt(1803, 3, 1),
+                                date=dt(1803, 3, 1).date(),
+                                display_format="MMMM D, YYYY",
+                            ),
+                            html.P("Filter by shark species:"),
+                            dcc.Dropdown(
+                                id="species-dropdown",
+                                options=species_options,
+                                placeholder="Select a Shark Species",
+                            ),
+                        ],
                     ),
-                    html.P("Filter by shark species:"),
-                    dcc.Dropdown(
-                        id="species-dropdown",
-                        options=species_options,
-                        placeholder="Select a Shark Species",
+                    # Right Column (Map)
+                    html.Div(
+                        className="eight columns div-for-charts bg-grey",
+                        children=[
+                            dcc.Graph(id="map-graph", config={"scrollZoom": True}),
+                        ],
                     ),
-                ],
-            ),
-            # Right Column (Map)
-            html.Div(
-                className="eight columns div-for-charts bg-grey",
-                children=[
-                    dcc.Graph(id="map-graph", config={"scrollZoom": True}),
                 ],
             ),
         ],
@@ -121,7 +128,7 @@ app.layout = html.Div([
     # A hidden Store that holds the incidents for the clicked bubble
     dcc.Store(id="selected-incidents-store", data={"rows": [], "current_index": 0}),
 
-    # Modal
+    # Modal (Unchanged)
     html.Div(
         id="info-modal",
         style={
@@ -139,12 +146,9 @@ app.layout = html.Div([
         },
         children=[
             html.Button("Close", id="close-modal", style={"float": "right", "margin": "10px"}),
-
-            # Container for next/previous buttons
             html.Div(
                 style={"marginBottom": "10px", "textAlign": "center"},
                 children=[
-                    # We'll hide or show these buttons dynamically via their style
                     html.Button(
                         "Previous",
                         id="prev-incident",
@@ -159,14 +163,27 @@ app.layout = html.Div([
                     ),
                 ],
             ),
-
             html.Div(id="modal-incident-content"),
         ],
     ),
+
+    # --------------------------------------------------------------------
+    # Pie Chart Additions (for box-select)
+    # --------------------------------------------------------------------
+    html.Hr(style={"marginTop": "20px"}),
+    html.Div(
+        style={"padding": "0 20px"},
+        children=[
+            html.H3("Box-Selected Data (Pie Chart by Species)"),
+            dcc.Graph(id="pie-chart"),
+        ]
+    ),
+
 ])
 
+
 # ------------------------------------------------------------------------------
-# Callback 1: Build the main Map figure from the Date & Species filters
+# 1) Callback: Build the main Map figure from the Date & Species filters
 # ------------------------------------------------------------------------------
 @app.callback(
     Output("map-graph", "figure"),
@@ -176,22 +193,19 @@ app.layout = html.Div([
     ],
 )
 def update_map(datePicked, selectedSpecies):
-    # Filter by date (month/day)
     date_picked = pd.to_datetime(datePicked) if datePicked else None
     if date_picked:
-        filtered_df = df[
+        filter_df = df[
             (df["Date"].dt.month == date_picked.month) &
             (df["Date"].dt.day == date_picked.day)
         ]
     else:
-        filtered_df = df.copy()
+        filter_df = df.copy()
 
-    # Filter by species if selected
     if selectedSpecies:
-        filtered_df = filtered_df[filtered_df["Shark.common.name"] == selectedSpecies]
+        filter_df = filter_df[filter_df["Shark.common.name"] == selectedSpecies]
 
-    if filtered_df.empty:
-        # Return an empty figure if no data
+    if filter_df.empty:
         return px.scatter_mapbox(
             pd.DataFrame({"Latitude": [], "Longitude": [], "Incident Count": []}),
             lat="Latitude", lon="Longitude", size="Incident Count",
@@ -199,10 +213,8 @@ def update_map(datePicked, selectedSpecies):
             mapbox_style="open-street-map"
         )
 
-    # Group to get bubble sizes
-    bubble_data = filtered_df.groupby(["Latitude", "Longitude"]).size().reset_index(name="Incident Count")
+    bubble_data = filter_df.groupby(["Latitude", "Longitude"]).size().reset_index(name="Incident Count")
 
-    # Create the figure
     fig = px.scatter_mapbox(
         bubble_data,
         lat="Latitude",
@@ -211,23 +223,20 @@ def update_map(datePicked, selectedSpecies):
         hover_name="Incident Count",
         color_discrete_sequence=["#636EFA"],
         zoom=4,
-        center={"lat": -25.0, "lon": 133.0},  # center on Australia
+        center={"lat": -25.0, "lon": 133.0},
         mapbox_style="open-street-map"
     )
     fig.update_traces(marker=dict(opacity=0.5))
     fig.update_layout(
         title="Shark Incidents Density",
-        margin={"r": 0, "t": 0, "l": 0, "b": 0}
+        margin={"r": 0, "t": 0, "l": 0, "b": 0},
+        dragmode="select"
     )
     return fig
 
+
 # ------------------------------------------------------------------------------
-# Callback 2 (Unified): 
-#   - Re-applies Date + Species filters so only displayed incidents appear
-#   - Filters for the clicked lat/lon
-#   - Opens/closes the modal
-#   - Handles Next/Previous
-#   - ALSO sets the style for prev/next buttons
+# 2) Callback (Unified) for the Modal + Blur
 # ------------------------------------------------------------------------------
 @app.callback(
     Output("info-modal", "style"),
@@ -235,6 +244,7 @@ def update_map(datePicked, selectedSpecies):
     Output("modal-incident-content", "children"),
     Output("prev-incident", "style"),  # Hide/show "Previous"
     Output("next-incident", "style"),  # Hide/show "Next"
+    Output("background-container", "className"),  # <-- NEW: toggle blur
     [
         Input("date-picker", "date"),
         Input("species-dropdown", "value"),
@@ -250,11 +260,10 @@ def handle_modal_and_incidents(
     close_clicks, prev_clicks, next_clicks,
     store_data
 ):
-    """Open/close modal, cycle incidents, and hide 'Next'/'Prev' if no more incidents."""
     ctx = dash.callback_context
     if not ctx.triggered:
         # Nothing happened yet
-        return {"display": "none"}, {"rows": [], "current_index": 0}, "No incident data available", {}, {}
+        return {"display": "none"}, {"rows": [], "current_index": 0}, "No incident data available", {}, {}, ""
 
     triggered_id = ctx.triggered[0]["prop_id"]
 
@@ -262,6 +271,8 @@ def handle_modal_and_incidents(
     default_style = {"display": "none"}
     default_store = {"rows": [], "current_index": 0}
     default_content = html.Div("No incident data available")
+    no_blur = ""
+    blurred = "blurred"  # We'll define .blurred in app.css
 
     # Default button styles: visible
     prev_style = {"marginRight": "20px", "padding": "8px 16px"}
@@ -269,7 +280,8 @@ def handle_modal_and_incidents(
 
     # 1) If the user clicked Close
     if "close-modal" in triggered_id:
-        return default_style, default_store, default_content, prev_style, next_style
+        # remove blur
+        return default_style, default_store, default_content, prev_style, next_style, no_blur
 
     # Filter by date + species
     date_picked = pd.to_datetime(datePicked) if datePicked else None
@@ -309,8 +321,7 @@ def handle_modal_and_incidents(
             })
 
         if not rows:
-            # No data => no modal
-            return default_style, default_store, default_content, prev_style, next_style
+            return default_style, default_store, default_content, prev_style, next_style, no_blur
 
         new_store = {"rows": rows, "current_index": 0}
         content = build_modal_content(rows, 0)
@@ -331,13 +342,14 @@ def handle_modal_and_incidents(
             "padding": "20px",
             "borderRadius": "10px",
         }
-        return modal_style, new_store, content, prev_style, next_style
+        # add blur
+        return modal_style, new_store, content, prev_style, next_style, blurred
 
     # 3) If Prev/Next was clicked => cycle
     rows = store_data.get("rows", [])
     current_idx = store_data.get("current_index", 0)
     if not rows:
-        return default_style, default_store, default_content, prev_style, next_style
+        return default_style, default_store, default_content, prev_style, next_style, no_blur
 
     modal_style = {
         "display": "block",
@@ -364,15 +376,14 @@ def handle_modal_and_incidents(
     # Hide next/prev if there is none
     prev_style, next_style = get_nav_button_styles(len(rows), current_idx, prev_style, next_style)
 
-    return modal_style, updated_store, content, prev_style, next_style
+    # keep blur
+    return modal_style, updated_store, content, prev_style, next_style, blurred
+
 
 # ------------------------------------------------------------------------------
 # Helper Function: Build the modal's content for a given incident row
 # ------------------------------------------------------------------------------
 def build_modal_content(rows, idx):
-    """
-    Renders text + shark image side-by-side for the given row.
-    """
     if not rows or idx < 0 or idx >= len(rows):
         return html.Div("No incident data available")
 
@@ -414,30 +425,19 @@ def build_modal_content(rows, idx):
 # Helper Function: Decide how to show/hide "Prev" / "Next" buttons
 # ------------------------------------------------------------------------------
 def get_nav_button_styles(num_rows, current_idx, prev_style, next_style):
-    """
-    If there's only 1 row, hide both buttons.
-    If current_idx == 0, hide "Previous".
-    If current_idx == num_rows - 1, hide "Next".
-    Otherwise, show them both.
-    """
-    # Start by showing them
     prev_style = prev_style.copy()
     next_style = next_style.copy()
 
     if num_rows <= 1:
-        # No need for prev or next if 0 or 1 incident
         prev_style["display"] = "none"
         next_style["display"] = "none"
         return prev_style, next_style
 
-    # More than 1 row:
-    # Hide 'Prev' if we're on the first
     if current_idx == 0:
         prev_style["display"] = "none"
     else:
-        prev_style.pop("display", None)  # remove any 'display' override
+        prev_style.pop("display", None)
 
-    # Hide 'Next' if we're on the last
     if current_idx == num_rows - 1:
         next_style["display"] = "none"
     else:
@@ -445,6 +445,40 @@ def get_nav_button_styles(num_rows, current_idx, prev_style, next_style):
 
     return prev_style, next_style
 
+# ------------------------------------------------------------------------------
+# 3) NEW Callback: Box-select => Update Pie Chart
+# ------------------------------------------------------------------------------
+@app.callback(
+    Output("pie-chart", "figure"),
+    Input("map-graph", "selectedData")
+)
+def update_pie_chart(selectedData):
+    if not selectedData or "points" not in selectedData:
+        empty_df = pd.DataFrame({"Shark.common.name": [], "Count": []})
+        return px.pie(empty_df, names="Shark.common.name", values="Count", title="No Box Selection")
+
+    selected_points = selectedData["points"]
+    if not selected_points:
+        empty_df = pd.DataFrame({"Shark.common.name": [], "Count": []})
+        return px.pie(empty_df, names="Shark.common.name", values="Count", title="No Box Selection")
+
+    selected_lats = [round(pt["lat"], 5) for pt in selected_points]
+    selected_lons = [round(pt["lon"], 5) for pt in selected_points]
+
+    filtered_df = df[df["Latitude"].isin(selected_lats) & df["Longitude"].isin(selected_lons)]
+    if filtered_df.empty:
+        empty_df = pd.DataFrame({"Shark.common.name": [], "Count": []})
+        return px.pie(empty_df, names="Shark.common.name", values="Count", title="No Data for Selection")
+
+    pie_data = filtered_df.groupby("Shark.common.name").size().reset_index(name="Count")
+    fig = px.pie(
+        pie_data,
+        names="Shark.common.name",
+        values="Count",
+        title="Shark Species in Box-Selected Area"
+    )
+    fig.update_traces(textposition='inside', textinfo='percent+label')
+    return fig
 
 # ------------------------------------------------------------------------------
 # Run the App
