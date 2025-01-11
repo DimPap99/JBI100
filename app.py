@@ -38,6 +38,13 @@ date_to_index = {date: i for i, date in enumerate(unique_dates)}
 index_to_date = {i: date for i, date in enumerate(unique_dates)}
 
 # Dropdown options
+# NEW => State Options
+# Make sure your dataset has a 'State' column.
+state_options = [
+    {"label": st, "value": st}
+    for st in sorted(df["State"].dropna().unique())
+]
+
 species_options = [
     {"label": s, "value": s}
     for s in df["Shark.common.name"].dropna().unique()
@@ -86,7 +93,6 @@ species_image_map = {
     "sevengill shark": "sevengill-shark.jpg",
     "lemon shark": "lemon-shark.jpg",
 }
-
 
 def get_shark_image(species_name: str) -> str:
     if not species_name or not isinstance(species_name, str):
@@ -158,6 +164,15 @@ app.layout = html.Div([
 
                             # A single label for the existing group of filters
                             html.P("Filters:"),
+
+                            # NEW => State Dropdown
+                            dcc.Dropdown(
+                                id="state-dropdown",
+                                options=state_options,
+                                placeholder="Select State(s)",
+                                multi=True,
+                                style={"marginBottom": "10px"}
+                            ),
 
                             # Shark Species
                             dcc.Dropdown(
@@ -328,6 +343,7 @@ app.layout = html.Div([
         Output("month-dropdown", "value"),
         Output("dayofweek-dropdown", "value"),
         Output("victim-activity-dropdown", "value"),
+        Output("state-dropdown", "value"),  # <-- Also reset the new State dropdown
     ],
     [
         Input("apply-date-button", "n_clicks"),
@@ -384,7 +400,8 @@ def apply_or_reset(
             dash.no_update,  # keep map selection
             dash.no_update,  # keep month
             dash.no_update,  # keep dayofweek
-            dash.no_update   # keep victim activity
+            dash.no_update,  # keep victim activity
+            dash.no_update,  # keep state
         )
 
     elif triggered_id == "reset-button":
@@ -397,6 +414,7 @@ def apply_or_reset(
         default_month = []
         default_dow = []
         default_victim_activity = []
+        default_state = []
 
         return (
             default_start,
@@ -406,7 +424,8 @@ def apply_or_reset(
             default_map_selection,
             default_month,
             default_dow,
-            default_victim_activity
+            default_victim_activity,
+            default_state
         )
 
     raise PreventUpdate
@@ -446,6 +465,7 @@ def handle_treemap_click_and_reset(treemap_click, reset_clicks):
 # ------------------------------------------------------------------------------
 # 3) “Master” Filtering Callback 
 #    - Date range
+#    - State           <--- ADDED
 #    - Species
 #    - Map box-select
 #    - Month
@@ -456,6 +476,7 @@ def handle_treemap_click_and_reset(treemap_click, reset_clicks):
     Output("filtered-data-store", "data"),
     [
         Input("date-slider", "value"),
+        Input("state-dropdown", "value"),       # <--- NEW
         Input("species-dropdown", "value"),
         Input("map-graph", "selectedData"),
         Input("month-dropdown", "value"),
@@ -463,7 +484,10 @@ def handle_treemap_click_and_reset(treemap_click, reset_clicks):
         Input("victim-activity-dropdown", "value"),
     ]
 )
-def update_filtered_data_store(slider_range, selected_species, map_selected, selected_months, selected_dows, selected_activities):
+def update_filtered_data_store(
+    slider_range, selected_states, selected_species,
+    map_selected, selected_months, selected_dows, selected_activities
+):
     # Start with full dataset
     filtered_df_local = df.copy()
 
@@ -476,31 +500,37 @@ def update_filtered_data_store(slider_range, selected_species, map_selected, sel
             (filtered_df_local["Date"] <= end_date)
         ]
 
-    # 2) Filter by species dropdown
+    # 2) Filter by State dropdown
+    if selected_states:
+        filtered_df_local = filtered_df_local[
+            filtered_df_local["State"].isin(selected_states)
+        ]
+
+    # 3) Filter by species dropdown
     if selected_species:
         filtered_df_local = filtered_df_local[
             filtered_df_local["Shark.common.name"].isin(selected_species)
         ]
 
-    # 3) Filter by month dropdown
+    # 4) Filter by month dropdown
     if selected_months:
         filtered_df_local = filtered_df_local[
             filtered_df_local["Month"].isin(selected_months)
         ]
 
-    # 4) Filter by day-of-week dropdown
+    # 5) Filter by day-of-week dropdown
     if selected_dows:
         filtered_df_local = filtered_df_local[
             filtered_df_local["DayOfWeek"].isin(selected_dows)
         ]
 
-    # 5) Filter by victim activity
+    # 6) Filter by victim activity
     if selected_activities:
         filtered_df_local = filtered_df_local[
             filtered_df_local["Victim.activity"].isin(selected_activities)
         ]
 
-    # 6) Filter by map box selection
+    # 7) Filter by map box selection
     if map_selected and "points" in map_selected:
         points = map_selected["points"]
         if points:
@@ -632,7 +662,7 @@ def update_map_from_filtered_data_and_treemap_path(filtered_data, treemap_path):
         lon="Longitude",
         size="Count",
         hover_name="Count",
-        color="Highlight",  
+        color="Highlight",
         zoom=4,
         center={"lat": -25.0, "lon": 133.0},
         mapbox_style="open-street-map"
