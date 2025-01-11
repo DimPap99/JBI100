@@ -29,47 +29,51 @@ species_options = [
 df["Latitude"] = pd.to_numeric(df["Latitude"], errors="coerce")
 df["Longitude"] = pd.to_numeric(df["Longitude"], errors="coerce")
 
-
 # -----------------------
 # App Layout
 # -----------------------
 app.layout = html.Div([
     html.Div(
-        className="row",
+        id="background-container",  # Add an ID to the background container
         children=[
-            # Left column with controls
             html.Div(
-                className="four columns div-user-controls",
+                className="row",
                 children=[
-                    html.H2("DASH - SHARK INCIDENT DATA"),
-                    html.P("Select a date (month/day) to filter incidents."),
-                    dcc.DatePickerSingle(
-                        id="date-picker",
-                        min_date_allowed=dt(1791, 1, 1),
-                        max_date_allowed=dt(2022, 12, 31),
-                        initial_visible_month=dt(2022, 1, 1),
-                        date=dt(2022, 1, 1).date(),
-                        display_format="MMMM D, YYYY",
+                    # Left column with controls
+                    html.Div(
+                        className="four columns div-user-controls",
+                        children=[
+                            html.H2("DASH - SHARK INCIDENT DATA"),
+                            html.P("Select a date (month/day) to filter incidents."),
+                            dcc.DatePickerSingle(
+                                id="date-picker",
+                                min_date_allowed=dt(1791, 1, 1),
+                                max_date_allowed=dt(2022, 12, 31),
+                                initial_visible_month=dt(2022, 1, 1),
+                                date=dt(2022, 1, 1).date(),
+                                display_format="MMMM D, YYYY",
+                            ),
+                            html.P("Filter by shark species:"),
+                            dcc.Dropdown(
+                                id="species-dropdown",
+                                options=species_options,
+                                placeholder="Select a Shark Species",
+                            ),
+                        ],
                     ),
-                    html.P("Filter by shark species:"),
-                    dcc.Dropdown(
-                        id="species-dropdown",
-                        options=species_options,
-                        placeholder="Select a Shark Species",
+                    # Right column with the map
+                    html.Div(
+                        className="eight columns div-for-charts bg-grey",
+                        children=[
+                            dcc.Graph(id="map-graph", config={"scrollZoom": True}),
+                        ],
                     ),
-                ],
-            ),
-            # Right column with the map
-            html.Div(
-                className="eight columns div-for-charts bg-grey",
-                children=[
-                    dcc.Graph(id="map-graph", config={"scrollZoom": True}),
                 ],
             ),
         ],
     ),
     
-    # Store that will hold the incidents for the clicked lat/lon
+    # Store for incidents
     dcc.Store(id="selected-incidents-store", data={"rows": [], "current_index": 0}),
 
     # Modal
@@ -99,9 +103,8 @@ app.layout = html.Div([
     ),
 ])
 
-# ------------------------------------------------------
-# Callback #1: Update the main map based on user inputs
-# ------------------------------------------------------
+
+# Callback to update the map
 @app.callback(
     Output("map-graph", "figure"),
     Input("date-picker", "date"),
@@ -109,7 +112,6 @@ app.layout = html.Div([
     Input("map-graph", "clickData"),
 )
 def update_graph(datePicked, selectedSpecies, clickData):
-    # Filter data for selected month/day
     date_picked = pd.to_datetime(datePicked)
     if pd.isnull(date_picked):
         filtered_df = df.copy()
@@ -119,26 +121,21 @@ def update_graph(datePicked, selectedSpecies, clickData):
             (df["Date"].dt.day == date_picked.day)
         ]
 
-    # Filter by species if selected
     if selectedSpecies:
         filtered_df = filtered_df[filtered_df["Shark.common.name"] == selectedSpecies]
 
-    # Group by lat/lon to create bubble size
     bubble_data = filtered_df.groupby(
         ["Latitude", "Longitude"]
     ).size().reset_index(name="Incident Count")
 
-    # Default map center & zoom (Australia)
     zoom_level = 4
     center = {"lat": -25.0, "lon": 133.0}
 
-    # If user clicked a bubble, zoom in
     if clickData:
         clicked_point = clickData["points"][0]
         center = {"lat": float(clicked_point["lat"]), "lon": float(clicked_point["lon"])}
         zoom_level = 8
 
-    # Create the figure
     fig = px.scatter_mapbox(
         bubble_data,
         lat="Latitude",
@@ -157,81 +154,26 @@ def update_graph(datePicked, selectedSpecies, clickData):
     )
     return fig
 
-# -----------------------------------------------------------------------
-# Callback #2 (Unified):
-#   - Determines whether to open/close the modal
-#   - Updates 'selected-incidents-store' data
-#   - Updates the 'modal-incident-content' children
-#   - We do it all in ONE callback to avoid "Output is already in use"
-# -----------------------------------------------------------------------
+# Callback to toggle modal and blur effect
 @app.callback(
+    Output("background-container", "className"),
     Output("info-modal", "style"),
-    Output("selected-incidents-store", "data"),
-    Output("modal-incident-content", "children"),
     [
         Input("map-graph", "clickData"),
         Input("close-modal", "n_clicks"),
-        Input("prev-incident", "n_clicks"),
-        Input("next-incident", "n_clicks")
     ],
-    [State("selected-incidents-store", "data")]
+    prevent_initial_call=True,
 )
-def handle_modal_and_incidents(clickData, close_clicks, prev_clicks, next_clicks, store_data):
-    """
-    - If the user clicks a bubble, we open the modal & load all incidents for that lat/lon into store_data.
-    - If the user clicks close, we hide the modal & reset store_data.
-    - If the user clicks Prev/Next, we move the current_index up/down.
-    - We return (modal style, updated store_data, modal content) in one shot.
-    """
-    # Default values
-    default_style = {"display": "none"}
-    default_store = {"rows": [], "current_index": 0}
-    default_content = "No incident data available"
-
-    # Figure out which input fired
+def toggle_modal_and_blur(clickData, close_clicks):
     ctx = dash.callback_context
     if not ctx.triggered:
-        return default_style, default_store, default_content
+        return "", {"display": "none"}
 
     triggered_input = ctx.triggered[0]["prop_id"]
-
-    # 1) If close button was clicked -> hide modal & reset store
     if "close-modal" in triggered_input:
-        return default_style, default_store, default_content
-
-    # 2) If the map was clicked -> open modal and store the lat/lon incidents
-    if "map-graph.clickData" in triggered_input and clickData:
-        lat_clicked = clickData["points"][0]["lat"]
-        lon_clicked = clickData["points"][0]["lon"]
-        # Filter df for that lat/lon (watch out for float precision if needed)
-        filtered_incidents = df[
-            (df["Latitude"] == float(lat_clicked)) &
-            (df["Longitude"] == float(lon_clicked))
-        ]
-        rows = []
-        for _, row in filtered_incidents.iterrows():
-            rows.append({
-                "Shark.common.name": row.get("Shark.common.name", "Unknown"),
-                "Date": (row["Date"].date().isoformat()
-                         if pd.notnull(row["Date"]) else "Unknown"),
-                "Victim.injury": str(row.get("Victim.injury", "")),
-                "Provoked/unprovoked": str(row.get("Provoked/unprovoked", "")),
-            })
-        new_store = {"rows": rows, "current_index": 0}
-        # Build content for the first incident
-        if rows:
-            first = rows[0]
-            content = [
-                html.P(f"Shark.common.name: {first['Shark.common.name']}"),
-                html.P(f"Date: {first['Date']}"),
-                html.P(f"Victim.injury: {first['Victim.injury']}"),
-                html.P(f"Provoked/unprovoked: {first['Provoked/unprovoked']}"),
-                html.P(f"Showing 1 of {len(rows)}"),
-            ]
-        else:
-            content = "No incident data available"
-
-        modal_style = {
+        return "", {"display": "none"}
+    elif "map-graph.clickData" in triggered_input and clickData:
+        return "blurred", {
             "display": "block",
             "position": "fixed",
             "top": "20%",
@@ -244,49 +186,9 @@ def handle_modal_and_incidents(clickData, close_clicks, prev_clicks, next_clicks
             "padding": "20px",
             "borderRadius": "10px",
         }
-        return modal_style, new_store, content
 
-    # 3) If Prev/Next was clicked -> update the current_index in store_data
-    rows = store_data.get("rows", [])
-    current_idx = store_data.get("current_index", 0)
-    if not rows:
-        # Nothing to show
-        return default_style, default_store, default_content
+    return "", {"display": "none"}
 
-    # The modal is presumably open if we have data in the store
-    modal_style = {
-        "display": "block",
-        "position": "fixed",
-        "top": "20%",
-        "left": "30%",
-        "width": "40%",
-        "height": "40%",
-        "backgroundColor": "white",
-        "boxShadow": "0px 0px 10px rgba(0, 0, 0, 0.5)",
-        "zIndex": 1000,
-        "padding": "20px",
-        "borderRadius": "10px",
-    }
-
-    if "prev-incident" in triggered_input:
-        current_idx = max(0, current_idx - 1)
-    elif "next-incident" in triggered_input:
-        current_idx = min(len(rows) - 1, current_idx + 1)
-
-    updated_store = {"rows": rows, "current_index": current_idx}
-    incident = rows[current_idx]
-    content = [
-        html.P(f"Shark.common.name: {incident['Shark.common.name']}"),
-        html.P(f"Date: {incident['Date']}"),
-        html.P(f"Victim.injury: {incident['Victim.injury']}"),
-        html.P(f"Provoked/unprovoked: {incident['Provoked/unprovoked']}"),
-        html.P(f"Showing {current_idx+1} of {len(rows)}"),
-    ]
-
-    return modal_style, updated_store, content
-
-# -------------
 # Run the app
-# -------------
 if __name__ == "__main__":
     app.run_server(debug=True)
