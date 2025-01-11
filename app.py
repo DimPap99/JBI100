@@ -15,10 +15,10 @@ server = app.server
 # ---------------------------------
 df = pd.read_csv("shark.csv")  # <-- Adjust path as needed
 df = df.dropna(subset=["Latitude", "Longitude"])
-df["Date"] = pd.to_datetime(
-    df["Incident.year"].astype(str) + "-" + df["Incident.month"].astype(str),
-    errors="coerce"
-)
+# df["Date"] = pd.to_datetime(
+#     df["Incident.year"].astype(str) + "-" + df["Incident.month"].astype(str),
+#     errors="coerce"
+# )
 
 # Build the list of species for the dropdown
 species_options = [
@@ -29,6 +29,12 @@ species_options = [
 df["Latitude"] = pd.to_numeric(df["Latitude"], errors="coerce")
 df["Longitude"] = pd.to_numeric(df["Longitude"], errors="coerce")
 
+# Define start and end dates for RangeSlider
+df = df.dropna(subset=["Date"])  # Ensure no missing values in Date
+df["Date"] = pd.to_datetime(df["Date"], errors="coerce")  # Handle parsing errors
+start_year = int(df["Date"].dt.year.min())  # Convert to integer
+end_year = int(df["Date"].dt.year.max())
+years = list(range(start_year, end_year + 1))
 
 # -----------------------
 # App Layout
@@ -50,6 +56,14 @@ app.layout = html.Div([
                         initial_visible_month=dt(2022, 1, 1),
                         date=dt(2022, 1, 1).date(),
                         display_format="MMMM D, YYYY",
+                    ),
+                    dcc.RangeSlider(
+                        id='date-slider',
+                        min=start_year,
+                        max=end_year,
+                        value=[start_year, end_year],
+                        marks={year: str(year) for year in range(start_year, end_year + 1, 50)},
+                        step = 1
                     ),
                     html.P("Filter by shark species:"),
                     dcc.Dropdown(
@@ -97,6 +111,7 @@ app.layout = html.Div([
             html.Div(id="modal-incident-content"),
         ],
     ),
+
 ])
 
 # ------------------------------------------------------
@@ -104,20 +119,40 @@ app.layout = html.Div([
 # ------------------------------------------------------
 @app.callback(
     Output("map-graph", "figure"),
+    Input("date-slider", "value"),
     Input("date-picker", "date"),
     Input("species-dropdown", "value"),
     Input("map-graph", "clickData"),
 )
-def update_graph(datePicked, selectedSpecies, clickData):
+def update_graph(date_picked, year_range, selectedSpecies, clickData):
     # Filter data for selected month/day
-    date_picked = pd.to_datetime(datePicked)
-    if pd.isnull(date_picked):
-        filtered_df = df.copy()
+    # Default: Full dataset
+    filtered_df = df.copy()
+
+    # Determine which input triggered the callback
+    ctx = dash.callback_context
+    if not ctx.triggered:
+        triggered_input = None
     else:
-        filtered_df = df[
-            (df["Date"].dt.month == date_picked.month) &
-            (df["Date"].dt.day == date_picked.day)
+        triggered_input = ctx.triggered[0]["prop_id"].split(".")[0]
+
+    # Apply filters based on the active input
+    if triggered_input == "date-picker" and date_picked:
+        # Filter by specific date
+        date_picked = pd.to_datetime(date_picked)
+        filtered_df = filtered_df[
+            (filtered_df["Date"].dt.month == date_picked.month)
+            & (filtered_df["Date"].dt.day == date_picked.day)
         ]
+    elif triggered_input == "date-slider" and year_range:
+        # Filter by year range
+        start_year, end_year = year_range
+        filtered_df = filtered_df[
+            (filtered_df["Date"].dt.year >= start_year)
+            & (filtered_df["Date"].dt.year <= end_year)
+        ]
+
+
 
     # Filter by species if selected
     if selectedSpecies:
