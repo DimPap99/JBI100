@@ -22,20 +22,42 @@ df.dropna(subset=["Latitude", "Longitude"], inplace=True)
 df["Latitude"] = df["Latitude"].round(5)
 df["Longitude"] = df["Longitude"].round(5)
 
+# Construct a single 'Date' column
 df["Date"] = pd.to_datetime(
     df["Incident.year"].astype(str) + "-" + df["Incident.month"].astype(str),
     errors="coerce"
 )
 
-# Sort for RangeSlider
+# Additional columns for month & day-of-week from 'Date'
+df["Month"] = df["Date"].dt.month_name()   # e.g. "January", "February"
+df["DayOfWeek"] = df["Date"].dt.day_name()  # e.g. "Monday", "Tuesday"
+
 df = df.sort_values("Date")
 unique_dates = df["Date"].dropna().unique()
 date_to_index = {date: i for i, date in enumerate(unique_dates)}
 index_to_date = {i: date for i, date in enumerate(unique_dates)}
 
+# Dropdown options
 species_options = [
     {"label": s, "value": s}
     for s in df["Shark.common.name"].dropna().unique()
+]
+
+month_options = [
+    {"label": m, "value": m}
+    for m in df["Month"].dropna().unique()
+]
+
+dayofweek_options = [
+    {"label": d, "value": d}
+    for d in df["DayOfWeek"].dropna().unique()
+]
+
+# NEW: Victim Activity
+# Make sure your CSV truly has "Victim.activity" or adjust accordingly
+victim_activity_options = [
+    {"label": act, "value": act}
+    for act in df["Victim.activity"].dropna().unique()
 ]
 
 species_image_map = {
@@ -134,12 +156,42 @@ app.layout = html.Div([
                                 tooltip={"placement": "bottom", "always_visible": True},
                             ),
 
-                            html.P("Filter by shark species:"),
+                            # A single label for the existing group of filters
+                            html.P("Filters:"),
+
+                            # Shark Species
                             dcc.Dropdown(
                                 id="species-dropdown",
                                 options=species_options,
                                 placeholder="Select Shark Species",
                                 multi=True,
+                                style={"marginBottom": "10px"}
+                            ),
+
+                            # Month
+                            dcc.Dropdown(
+                                id="month-dropdown",
+                                options=month_options,
+                                placeholder="Select Month(s)",
+                                multi=True,
+                                style={"marginBottom": "10px"}
+                            ),
+
+                            # Day of Week
+                            dcc.Dropdown(
+                                id="dayofweek-dropdown",
+                                options=dayofweek_options,
+                                placeholder="Select Day(s)",
+                                multi=True,
+                                style={"marginBottom": "10px"}
+                            ),
+
+                            # NEW: Victim Activity
+                            dcc.Dropdown(
+                                id="victim-activity-dropdown",
+                                options=victim_activity_options,
+                                placeholder="Select Victim Activity",
+                                multi=True
                             ),
                         ],
                     ),
@@ -217,11 +269,12 @@ app.layout = html.Div([
         ],
     ),
 
+    # Stores
     dcc.Store(id="selected-incidents-store", data={"rows": [], "current_index": 0}),
     dcc.Store(id="filtered-data-store"),
-    # We'll store the entire treemap path (e.g. "Bull shark/lacerations/unprovoked") 
-    dcc.Store(id="pie-selected-species", data=None),
+    dcc.Store(id="pie-selected-species", data=None),  # store full treemap path
 
+    # Modal
     html.Div(
         id="info-modal",
         style={
@@ -263,7 +316,7 @@ app.layout = html.Div([
 
 
 # ------------------------------------------------------------------------------
-# 1) Single Callback to Handle "Apply" AND "Reset" for Date/Species
+# 1) Single Callback to Handle "Apply" AND "Reset"
 # ------------------------------------------------------------------------------
 @app.callback(
     [
@@ -272,6 +325,9 @@ app.layout = html.Div([
         Output("date-slider", "value"),
         Output("species-dropdown", "value"),
         Output("map-graph", "selectedData"),
+        Output("month-dropdown", "value"),
+        Output("dayofweek-dropdown", "value"),
+        Output("victim-activity-dropdown", "value"),
     ],
     [
         Input("apply-date-button", "n_clicks"),
@@ -284,8 +340,10 @@ app.layout = html.Div([
     ],
     prevent_initial_call=True
 )
-def apply_or_reset(apply_clicks, reset_clicks,
-                   current_start_date, current_end_date, current_slider):
+def apply_or_reset(
+    apply_clicks, reset_clicks,
+    current_start_date, current_end_date, current_slider
+):
     ctx = dash.callback_context
     if not ctx.triggered:
         raise PreventUpdate
@@ -322,8 +380,11 @@ def apply_or_reset(apply_clicks, reset_clicks,
             new_start_date,
             new_end_date,
             new_slider,
-            dash.no_update,  # keep species dropdown as-is
-            dash.no_update,  # keep map selection as-is
+            dash.no_update,  # keep species dropdown
+            dash.no_update,  # keep map selection
+            dash.no_update,  # keep month
+            dash.no_update,  # keep dayofweek
+            dash.no_update   # keep victim activity
         )
 
     elif triggered_id == "reset-button":
@@ -333,6 +394,9 @@ def apply_or_reset(apply_clicks, reset_clicks,
         default_slider_range = [0, len(unique_dates) - 1]
         default_species = []
         default_map_selection = None
+        default_month = []
+        default_dow = []
+        default_victim_activity = []
 
         return (
             default_start,
@@ -340,6 +404,9 @@ def apply_or_reset(apply_clicks, reset_clicks,
             default_slider_range,
             default_species,
             default_map_selection,
+            default_month,
+            default_dow,
+            default_victim_activity
         )
 
     raise PreventUpdate
@@ -357,11 +424,6 @@ def apply_or_reset(apply_clicks, reset_clicks,
     prevent_initial_call=True
 )
 def handle_treemap_click_and_reset(treemap_click, reset_clicks):
-    """
-    We store the entire Treemap "id" in pie-selected-species.
-    This "id" might look like "Bull shark/lacerations/unprovoked" 
-    or just "Bull shark" or "Bull shark/lacerations".
-    """
     ctx = dash.callback_context
     if not ctx.triggered:
         raise PreventUpdate
@@ -372,9 +434,7 @@ def handle_treemap_click_and_reset(treemap_click, reset_clicks):
         if treemap_click and "points" in treemap_click:
             points = treemap_click["points"]
             if points:
-                # For a Treemap, the entire path is stored in "id"
-                # e.g. "Bull shark/lacerations/unprovoked" or partial
-                return points[0].get("id")  # store this path in the store
+                return points[0].get("id")  # store the treemap node path, e.g. "Bull shark/lacerations/unprovoked"
         return dash.no_update
 
     elif triggered_id == "reset-button":
@@ -384,7 +444,13 @@ def handle_treemap_click_and_reset(treemap_click, reset_clicks):
 
 
 # ------------------------------------------------------------------------------
-# 3) “Master” Filtering Callback (Date range, species, map box-select)
+# 3) “Master” Filtering Callback 
+#    - Date range
+#    - Species
+#    - Map box-select
+#    - Month
+#    - Day of Week
+#    - Victim.activity
 # ------------------------------------------------------------------------------
 @app.callback(
     Output("filtered-data-store", "data"),
@@ -392,9 +458,12 @@ def handle_treemap_click_and_reset(treemap_click, reset_clicks):
         Input("date-slider", "value"),
         Input("species-dropdown", "value"),
         Input("map-graph", "selectedData"),
+        Input("month-dropdown", "value"),
+        Input("dayofweek-dropdown", "value"),
+        Input("victim-activity-dropdown", "value"),
     ]
 )
-def update_filtered_data_store(slider_range, selected_species, map_selected):
+def update_filtered_data_store(slider_range, selected_species, map_selected, selected_months, selected_dows, selected_activities):
     # Start with full dataset
     filtered_df_local = df.copy()
 
@@ -413,7 +482,25 @@ def update_filtered_data_store(slider_range, selected_species, map_selected):
             filtered_df_local["Shark.common.name"].isin(selected_species)
         ]
 
-    # 3) Filter by map box selection (if any)
+    # 3) Filter by month dropdown
+    if selected_months:
+        filtered_df_local = filtered_df_local[
+            filtered_df_local["Month"].isin(selected_months)
+        ]
+
+    # 4) Filter by day-of-week dropdown
+    if selected_dows:
+        filtered_df_local = filtered_df_local[
+            filtered_df_local["DayOfWeek"].isin(selected_dows)
+        ]
+
+    # 5) Filter by victim activity
+    if selected_activities:
+        filtered_df_local = filtered_df_local[
+            filtered_df_local["Victim.activity"].isin(selected_activities)
+        ]
+
+    # 6) Filter by map box selection
     if map_selected and "points" in map_selected:
         points = map_selected["points"]
         if points:
@@ -428,20 +515,13 @@ def update_filtered_data_store(slider_range, selected_species, map_selected):
 
 
 # ------------------------------------------------------------------------------
-# 4) Update the Treemap from the *currently filtered data*
+# 4) Build Treemap from filtered data
 # ------------------------------------------------------------------------------
 @app.callback(
     Output("pie-chart", "figure"),
     Input("filtered-data-store", "data")
 )
 def update_treemap_from_filtered_data(filtered_data):
-    """
-    Build a Treemap grouped by:
-      1) Shark.common.name
-      2) Victim.injury
-      3) Provoked/unprovoked
-    from the currently filtered data.
-    """
     if not filtered_data:
         empty_df = pd.DataFrame({
             "Shark.common.name": [],
@@ -475,7 +555,7 @@ def update_treemap_from_filtered_data(filtered_data):
         fig.update_layout(clickmode='event+select')
         return fig
 
-    # Group by 3 levels and count incidents
+    # Group by 3 levels
     tree_data = (
         filtered_df_local
         .groupby(["Shark.common.name", "Victim.injury", "Provoked/unprovoked"])
@@ -489,13 +569,12 @@ def update_treemap_from_filtered_data(filtered_data):
         values="Count",
         title="Shark Incidents Treemap (Species -> Injury -> Provoked)"
     )
-    # Enable clickmode so user can click nodes => we get "id" in clickData
     fig.update_layout(clickmode='event+select')
     return fig
 
 
 # ------------------------------------------------------------------------------
-# 5) Update the Map to highlight the treemap-clicked path (species, injury, provoked) if any
+# 5) Update Map to highlight the treemap-clicked path (if any)
 # ------------------------------------------------------------------------------
 @app.callback(
     Output("map-graph", "figure"),
@@ -524,9 +603,6 @@ def update_map_from_filtered_data_and_treemap_path(filtered_data, treemap_path):
             title="No Data"
         )
 
-    # If user clicked a Treemap node => we get a path like: 
-    #  "Bull shark/lacerations/unprovoked"
-    # or just "Bull shark" or "Bull shark/lacerations"
     df_local["Highlight"] = "Other"
     if treemap_path:
         path_parts = treemap_path.split("/")
@@ -534,7 +610,6 @@ def update_map_from_filtered_data_and_treemap_path(filtered_data, treemap_path):
         injury_sel = path_parts[1] if len(path_parts) >= 2 else None
         provoked_sel = path_parts[2] if len(path_parts) >= 3 else None
 
-        # Build a boolean mask for each level that is present
         mask = pd.Series([True]*len(df_local))
         if species_sel:
             mask &= (df_local["Shark.common.name"] == species_sel)
@@ -543,40 +618,32 @@ def update_map_from_filtered_data_and_treemap_path(filtered_data, treemap_path):
         if provoked_sel:
             mask &= (df_local["Provoked/unprovoked"] == provoked_sel)
 
-        # Mark those rows as "Selected"
         df_local.loc[mask, "Highlight"] = "Selected"
-    else:
-        # No click => everything is "Other"
-        pass
 
-    # Now group for bubble sizing
     bubble_data = (
         df_local.groupby(["Latitude", "Longitude", "Highlight"])
         .size()
         .reset_index(name="Count")
     )
 
-    # Build the scatter map
     fig = px.scatter_mapbox(
         bubble_data,
         lat="Latitude",
         lon="Longitude",
         size="Count",
         hover_name="Count",
-        color="Highlight",  # "Selected" vs "Other"
+        color="Highlight",  
         zoom=4,
         center={"lat": -25.0, "lon": 133.0},
         mapbox_style="open-street-map"
     )
-
-    # Let's adjust the color scale so that "Selected" is red, "Other" is blue
     fig.update_traces(marker=dict(opacity=0.6), selector=dict(mode='markers'))
     fig.update_layout(
         coloraxis=dict(
             colorscale=[
-                [0, "blue"],      # 'Other'
+                [0, "blue"],
                 [0.5, "blue"],
-                [0.5, "red"],     # 'Selected'
+                [0.5, "red"],
                 [1, "red"],
             ],
             showscale=False,
