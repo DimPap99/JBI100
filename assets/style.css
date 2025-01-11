@@ -280,3 +280,22 @@ a {
 #background-container {
   transition: filter 0.3s ease;
 }
+
+
+.div-for-charts {
+  display: flex;
+  flex-direction: column;
+  /* Remove or override any existing "height: 100vh;" here if it exists 
+     because we set it in Python, or set it to auto if you prefer */
+  height: auto;
+  width: 100%;
+  /* Let the Python code do overflowY: auto */
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  overflow: hidden; /* no scrollbars on body */
+  height: 100%;
+  width: 100%;
+}

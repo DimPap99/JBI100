@@ -5,9 +5,6 @@ from dash.dependencies import Input, Output, State
 import plotly.express as px
 from datetime import datetime as dt
 
-# ------------------------------------------------------------------------------
-# Initialize the app
-# ------------------------------------------------------------------------------
 app = dash.Dash(__name__, meta_tags=[{"name": "viewport", "content": "width=device-width"}])
 app.title = "Shark Incidents in Australia"
 server = app.server
@@ -15,34 +12,25 @@ server = app.server
 # ------------------------------------------------------------------------------
 # Load & Preprocess Data
 # ------------------------------------------------------------------------------
-df = pd.read_csv("shark.csv")  # <-- Adjust CSV path as needed
+df = pd.read_csv("shark.csv")  # <-- Adjust CSV path if needed
 
-# Convert lat/lon to numeric floats
 df["Latitude"] = pd.to_numeric(df["Latitude"], errors="coerce")
 df["Longitude"] = pd.to_numeric(df["Longitude"], errors="coerce")
-
-# Drop invalid lat/lon
 df.dropna(subset=["Latitude", "Longitude"], inplace=True)
 
-# Round lat/lon to avoid tiny float mismatches
 df["Latitude"] = df["Latitude"].round(5)
 df["Longitude"] = df["Longitude"].round(5)
 
-# Create a datetime from Incident.year + Incident.month
 df["Date"] = pd.to_datetime(
     df["Incident.year"].astype(str) + "-" + df["Incident.month"].astype(str),
     errors="coerce"
 )
 
-# Build the species dropdown
 species_options = [
     {"label": s, "value": s}
     for s in df["Shark.common.name"].dropna().unique()
 ]
 
-# ------------------------------------------------------------------------------
-# Species -> Image Filename Mapping
-# ------------------------------------------------------------------------------
 species_image_map = {
     "grey reef shark": "gray-reef-shark.webp",
     "dogfish": "dogfish.webp",
@@ -68,11 +56,9 @@ species_image_map = {
     "tiger shark": "tiger_shark.jpg",
     "sevengill shark": "sevengill-shark.jpg",
     "lemon shark": "lemon-shark.jpg",
-    # fallback if species not found
 }
 
 def get_shark_image(species_name: str) -> str:
-    """Return the filename for the shark image, default to 'unknown.webp' if no match."""
     if not species_name or not isinstance(species_name, str):
         return "unknown.webp"
     clean = species_name.strip().lower()
@@ -83,8 +69,8 @@ def get_shark_image(species_name: str) -> str:
 # Layout
 # ------------------------------------------------------------------------------
 app.layout = html.Div([
-    
-    # Wrap everything in a container we can blur
+
+    # Everything in a container we can blur
     html.Div(
         id="background-container",
         children=[
@@ -113,11 +99,77 @@ app.layout = html.Div([
                             ),
                         ],
                     ),
-                    # Right Column (Map)
+                    # Right Column (Map + Charts)
                     html.Div(
                         className="eight columns div-for-charts bg-grey",
+                        style={
+                            "display": "flex",
+                            "flexDirection": "column",
+                            ### CHANGED: either remove fixed height or set to 100vh
+                            "height": "100vh",
+                            "padding": "10px",
+                            ### CHANGED: allow scrolling if content is taller
+                            "overflowY": "auto",
+                        },
                         children=[
-                            dcc.Graph(id="map-graph", config={"scrollZoom": True}),
+                            # Map (take ~50% vertical)
+                            html.Div(
+                                style={"flex": "0 0 50%", "marginBottom": "10px"},
+                                children=[
+                                    dcc.Graph(
+                                        id="map-graph",
+                                        config={"scrollZoom": True},
+                                        style={"height": "100%", "width": "100%"}
+                                    )
+                                ]
+                            ),
+                            # Below map: space for two charts side by side OR stacked
+                            #
+                            # Example: If you want them stacked, each can be 50% in height:
+                            html.Div(
+                                style={
+                                    "flex": "0 0 50%",  
+                                    "marginTop": "5px",
+                                    ### If you want them side-by-side, switch flexDirection to 'row'
+                                    "display": "flex",
+                                    "flexDirection": "row",
+                                    "justifyContent": "space-between",
+                                },
+                                children=[
+                                    # Chart 1 (your pie chart)
+                                    html.Div(
+                                        style={"flex": "1", "marginRight": "5px"},
+                                        children=[
+                                            html.H4(
+                                                "Box-Selected Data (Pie Chart by Species)",
+                                                style={"paddingLeft": "12px"}
+                                            ),
+                                            dcc.Graph(
+                                                id="pie-chart",
+                                                style={"height": "85%", "width": "100%"}
+                                            )
+                                        ]
+                                    ),
+                                    # Chart 2 (placeholder or future chart)
+                                    html.Div(
+                                        style={"flex": "1", "marginLeft": "5px"},
+                                        children=[
+                                            html.H4("Another Chart Placeholder", style={"paddingLeft": "12px"}),
+                                            html.Div(
+                                                "Put your second chart or any content here...",
+                                                style={
+                                                    "height": "85%",
+                                                    "width": "100%",
+                                                    "border": "1px dashed #999",
+                                                    "display": "flex",
+                                                    "alignItems": "center",
+                                                    "justifyContent": "center"
+                                                }
+                                            )
+                                        ]
+                                    ),
+                                ]
+                            ),
                         ],
                     ),
                 ],
@@ -125,10 +177,10 @@ app.layout = html.Div([
         ],
     ),
 
-    # A hidden Store that holds the incidents for the clicked bubble
+    # Store for clicked bubble incidents
     dcc.Store(id="selected-incidents-store", data={"rows": [], "current_index": 0}),
 
-    # Modal (Unchanged)
+    # Modal
     html.Div(
         id="info-modal",
         style={
@@ -166,24 +218,10 @@ app.layout = html.Div([
             html.Div(id="modal-incident-content"),
         ],
     ),
-
-    # --------------------------------------------------------------------
-    # Pie Chart Additions (for box-select)
-    # --------------------------------------------------------------------
-    html.Hr(style={"marginTop": "20px"}),
-    html.Div(
-        style={"padding": "0 20px"},
-        children=[
-            html.H3("Box-Selected Data (Pie Chart by Species)"),
-            dcc.Graph(id="pie-chart"),
-        ]
-    ),
-
 ])
 
-
 # ------------------------------------------------------------------------------
-# 1) Callback: Build the main Map figure from the Date & Species filters
+# 1) Build the main Map figure from Date/Species
 # ------------------------------------------------------------------------------
 @app.callback(
     Output("map-graph", "figure"),
@@ -236,15 +274,15 @@ def update_map(datePicked, selectedSpecies):
 
 
 # ------------------------------------------------------------------------------
-# 2) Callback (Unified) for the Modal + Blur
+# 2) Unified Callback for the Modal + Blur
 # ------------------------------------------------------------------------------
 @app.callback(
     Output("info-modal", "style"),
     Output("selected-incidents-store", "data"),
     Output("modal-incident-content", "children"),
-    Output("prev-incident", "style"),  # Hide/show "Previous"
-    Output("next-incident", "style"),  # Hide/show "Next"
-    Output("background-container", "className"),  # <-- NEW: toggle blur
+    Output("prev-incident", "style"),
+    Output("next-incident", "style"),
+    Output("background-container", "className"),
     [
         Input("date-picker", "date"),
         Input("species-dropdown", "value"),
@@ -262,28 +300,25 @@ def handle_modal_and_incidents(
 ):
     ctx = dash.callback_context
     if not ctx.triggered:
-        # Nothing happened yet
         return {"display": "none"}, {"rows": [], "current_index": 0}, "No incident data available", {}, {}, ""
 
     triggered_id = ctx.triggered[0]["prop_id"]
 
-    # Default style, store, content
+    # Defaults
     default_style = {"display": "none"}
     default_store = {"rows": [], "current_index": 0}
     default_content = html.Div("No incident data available")
     no_blur = ""
-    blurred = "blurred"  # We'll define .blurred in app.css
+    blurred = "blurred"
 
-    # Default button styles: visible
     prev_style = {"marginRight": "20px", "padding": "8px 16px"}
     next_style = {"padding": "8px 16px"}
 
-    # 1) If the user clicked Close
+    # If user closed
     if "close-modal" in triggered_id:
-        # remove blur
         return default_style, default_store, default_content, prev_style, next_style, no_blur
 
-    # Filter by date + species
+    # Filter
     date_picked = pd.to_datetime(datePicked) if datePicked else None
     if date_picked:
         filter_df = df[
@@ -296,7 +331,7 @@ def handle_modal_and_incidents(
     if selectedSpecies:
         filter_df = filter_df[filter_df["Shark.common.name"] == selectedSpecies]
 
-    # 2) If map was clicked => open modal with incidents at lat/lon
+    # If map clicked => open modal
     if "map-graph.clickData" in triggered_id and clickData:
         lat_clicked = round(clickData["points"][0]["lat"], 5)
         lon_clicked = round(clickData["points"][0]["lon"], 5)
@@ -310,8 +345,7 @@ def handle_modal_and_incidents(
         for _, row in clicked_incidents.iterrows():
             species = row.get("Shark.common.name", "Unknown")
             date_str = (
-                row["Date"].date().isoformat() 
-                if pd.notnull(row["Date"]) else "Unknown"
+                row["Date"].date().isoformat() if pd.notnull(row["Date"]) else "Unknown"
             )
             rows.append({
                 "Shark.common.name": species,
@@ -326,7 +360,7 @@ def handle_modal_and_incidents(
         new_store = {"rows": rows, "current_index": 0}
         content = build_modal_content(rows, 0)
 
-        # Next/Prev button logic for first display
+        # Next/Prev button logic
         prev_style, next_style = get_nav_button_styles(len(rows), 0, prev_style, next_style)
 
         modal_style = {
@@ -342,10 +376,9 @@ def handle_modal_and_incidents(
             "padding": "20px",
             "borderRadius": "10px",
         }
-        # add blur
         return modal_style, new_store, content, prev_style, next_style, blurred
 
-    # 3) If Prev/Next was clicked => cycle
+    # If Prev/Next
     rows = store_data.get("rows", [])
     current_idx = store_data.get("current_index", 0)
     if not rows:
@@ -373,15 +406,12 @@ def handle_modal_and_incidents(
     updated_store = {"rows": rows, "current_index": current_idx}
     content = build_modal_content(rows, current_idx)
 
-    # Hide next/prev if there is none
     prev_style, next_style = get_nav_button_styles(len(rows), current_idx, prev_style, next_style)
-
-    # keep blur
     return modal_style, updated_store, content, prev_style, next_style, blurred
 
 
 # ------------------------------------------------------------------------------
-# Helper Function: Build the modal's content for a given incident row
+# Helper: Build the modal's content
 # ------------------------------------------------------------------------------
 def build_modal_content(rows, idx):
     if not rows or idx < 0 or idx >= len(rows):
@@ -399,7 +429,6 @@ def build_modal_content(rows, idx):
     return html.Div(
         className="modal-content-wrapper",
         children=[
-            # Left (text information)
             html.Div(
                 className="modal-text-wrapper",
                 children=[
@@ -410,7 +439,6 @@ def build_modal_content(rows, idx):
                     html.P(f"Showing {idx + 1} of {total}", className="modal-pagination"),
                 ]
             ),
-            # Right (image)
             html.Div(
                 className="modal-image-wrapper",
                 children=html.Img(
@@ -422,7 +450,7 @@ def build_modal_content(rows, idx):
     )
 
 # ------------------------------------------------------------------------------
-# Helper Function: Decide how to show/hide "Prev" / "Next" buttons
+# Helper: Show/hide "Prev"/"Next" buttons
 # ------------------------------------------------------------------------------
 def get_nav_button_styles(num_rows, current_idx, prev_style, next_style):
     prev_style = prev_style.copy()
@@ -446,7 +474,7 @@ def get_nav_button_styles(num_rows, current_idx, prev_style, next_style):
     return prev_style, next_style
 
 # ------------------------------------------------------------------------------
-# 3) NEW Callback: Box-select => Update Pie Chart
+# 3) Box-select => Update Pie Chart
 # ------------------------------------------------------------------------------
 @app.callback(
     Output("pie-chart", "figure"),
@@ -457,31 +485,25 @@ def update_pie_chart(selectedData):
         empty_df = pd.DataFrame({"Shark.common.name": [], "Count": []})
         return px.pie(empty_df, names="Shark.common.name", values="Count", title="No Box Selection")
 
-    selected_points = selectedData["points"]
-    if not selected_points:
+    points = selectedData["points"]
+    if not points:
         empty_df = pd.DataFrame({"Shark.common.name": [], "Count": []})
         return px.pie(empty_df, names="Shark.common.name", values="Count", title="No Box Selection")
 
-    selected_lats = [round(pt["lat"], 5) for pt in selected_points]
-    selected_lons = [round(pt["lon"], 5) for pt in selected_points]
-
-    filtered_df = df[df["Latitude"].isin(selected_lats) & df["Longitude"].isin(selected_lons)]
+    lats = [round(pt["lat"], 5) for pt in points]
+    lons = [round(pt["lon"], 5) for pt in points]
+    filtered_df = df[df["Latitude"].isin(lats) & df["Longitude"].isin(lons)]
     if filtered_df.empty:
         empty_df = pd.DataFrame({"Shark.common.name": [], "Count": []})
         return px.pie(empty_df, names="Shark.common.name", values="Count", title="No Data for Selection")
 
     pie_data = filtered_df.groupby("Shark.common.name").size().reset_index(name="Count")
-    fig = px.pie(
-        pie_data,
-        names="Shark.common.name",
-        values="Count",
-        title="Shark Species in Box-Selected Area"
-    )
+    fig = px.pie(pie_data, names="Shark.common.name", values="Count", title="Shark Species in Box-Selected Area")
     fig.update_traces(textposition='inside', textinfo='percent+label')
     return fig
 
 # ------------------------------------------------------------------------------
-# Run the App
+# Run
 # ------------------------------------------------------------------------------
 if __name__ == "__main__":
     app.run_server(debug=True)
