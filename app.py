@@ -4,6 +4,7 @@ import pandas as pd
 from dash.dependencies import Input, Output, State
 import plotly.express as px
 from datetime import datetime as dt
+from dash.exceptions import PreventUpdate
 
 app = dash.Dash(__name__, meta_tags=[{"name": "viewport", "content": "width=device-width"}])
 app.title = "Shark Incidents in Australia"
@@ -63,6 +64,7 @@ species_image_map = {
     "sevengill shark": "sevengill-shark.jpg",
     "lemon shark": "lemon-shark.jpg",
 }
+
 
 def get_shark_image(species_name: str) -> str:
     if not species_name or not isinstance(species_name, str):
@@ -164,7 +166,7 @@ app.layout = html.Div([
                                     )
                                 ]
                             ),
-                            # Pie chart + second chart side by side
+                            # Treemap + second chart side by side
                             html.Div(
                                 style={
                                     "flex": "0 0 50%",
@@ -174,12 +176,12 @@ app.layout = html.Div([
                                     "justifyContent": "space-between",
                                 },
                                 children=[
-                                    # Pie chart
+                                    # Treemap (replaces the old Pie chart)
                                     html.Div(
                                         style={"flex": "1", "marginRight": "5px"},
                                         children=[
                                             html.H4(
-                                                "Box-Selected Data (Pie Chart by Species)",
+                                                "Box-Selected Data (Treemap)",
                                                 style={"paddingLeft": "12px"}
                                             ),
                                             dcc.Graph(
@@ -217,7 +219,7 @@ app.layout = html.Div([
 
     dcc.Store(id="selected-incidents-store", data={"rows": [], "current_index": 0}),
     dcc.Store(id="filtered-data-store"),
-    # SINGLE store for highlighting the pie-clicked species
+    # We'll store the entire treemap path (e.g. "Bull shark/lacerations/unprovoked") 
     dcc.Store(id="pie-selected-species", data=None),
 
     html.Div(
@@ -262,7 +264,6 @@ app.layout = html.Div([
 
 # ------------------------------------------------------------------------------
 # 1) Single Callback to Handle "Apply" AND "Reset" for Date/Species
-#    (But *not* for pie-selected-species — see next callback)
 # ------------------------------------------------------------------------------
 @app.callback(
     [
@@ -287,7 +288,7 @@ def apply_or_reset(apply_clicks, reset_clicks,
                    current_start_date, current_end_date, current_slider):
     ctx = dash.callback_context
     if not ctx.triggered:
-        raise dash.exceptions.PreventUpdate
+        raise PreventUpdate
 
     triggered_id = ctx.triggered[0]["prop_id"].split(".")[0]
 
@@ -341,11 +342,11 @@ def apply_or_reset(apply_clicks, reset_clicks,
             default_map_selection,
         )
 
-    raise dash.exceptions.PreventUpdate
+    raise PreventUpdate
 
 
 # ------------------------------------------------------------------------------
-# 2) COMBINED callback for pie-chart click + reset => set pie-selected-species
+# 2) COMBINED callback for treemap-click + reset => set pie-selected-species
 # ------------------------------------------------------------------------------
 @app.callback(
     Output("pie-selected-species", "data"),
@@ -355,31 +356,31 @@ def apply_or_reset(apply_clicks, reset_clicks,
     ],
     prevent_initial_call=True
 )
-def handle_pie_click_and_reset(pie_click, reset_clicks):
+def handle_treemap_click_and_reset(treemap_click, reset_clicks):
     """
-    Single callback that updates `pie-selected-species`:
-    - If user clicks a slice on the pie => set that species
-    - If user clicks "Reset" => clear (set to None)
+    We store the entire Treemap "id" in pie-selected-species.
+    This "id" might look like "Bull shark/lacerations/unprovoked" 
+    or just "Bull shark" or "Bull shark/lacerations".
     """
     ctx = dash.callback_context
     if not ctx.triggered:
-        raise dash.exceptions.PreventUpdate
+        raise PreventUpdate
 
     triggered_id = ctx.triggered[0]["prop_id"].split(".")[0]
 
     if triggered_id == "pie-chart":
-        # user clicked on pie
-        if pie_click and "points" in pie_click:
-            points = pie_click["points"]
+        if treemap_click and "points" in treemap_click:
+            points = treemap_click["points"]
             if points:
-                return points[0].get("label")  # e.g. "white shark"
+                # For a Treemap, the entire path is stored in "id"
+                # e.g. "Bull shark/lacerations/unprovoked" or partial
+                return points[0].get("id")  # store this path in the store
         return dash.no_update
 
     elif triggered_id == "reset-button":
-        # user clicked "Reset"
         return None
 
-    raise dash.exceptions.PreventUpdate
+    raise PreventUpdate
 
 
 # ------------------------------------------------------------------------------
@@ -412,10 +413,10 @@ def update_filtered_data_store(slider_range, selected_species, map_selected):
             filtered_df_local["Shark.common.name"].isin(selected_species)
         ]
 
-    # 3) Filter by map box selection
+    # 3) Filter by map box selection (if any)
     if map_selected and "points" in map_selected:
         points = map_selected["points"]
-        if points:  # user actually box-selected something
+        if points:
             lats = [round(pt["lat"], 5) for pt in points]
             lons = [round(pt["lon"], 5) for pt in points]
             filtered_df_local = filtered_df_local[
@@ -423,35 +424,78 @@ def update_filtered_data_store(slider_range, selected_species, map_selected):
                 filtered_df_local["Longitude"].isin(lons)
             ]
 
-    # Return the final subset as JSON-ish (list of dicts)
     return filtered_df_local.to_dict("records")
 
 
 # ------------------------------------------------------------------------------
-# 4) Update Pie Chart from the *currently filtered data*
+# 4) Update the Treemap from the *currently filtered data*
 # ------------------------------------------------------------------------------
 @app.callback(
     Output("pie-chart", "figure"),
     Input("filtered-data-store", "data")
 )
-def update_pie_chart_from_filtered_data(filtered_data):
+def update_treemap_from_filtered_data(filtered_data):
+    """
+    Build a Treemap grouped by:
+      1) Shark.common.name
+      2) Victim.injury
+      3) Provoked/unprovoked
+    from the currently filtered data.
+    """
     if not filtered_data:
-        empty_df = pd.DataFrame({"Shark.common.name": [], "Count": []})
-        return px.pie(empty_df, names="Shark.common.name", values="Count", title="No Data")
+        empty_df = pd.DataFrame({
+            "Shark.common.name": [],
+            "Victim.injury": [],
+            "Provoked/unprovoked": [],
+            "Count": []
+        })
+        fig = px.treemap(
+            empty_df,
+            path=["Shark.common.name", "Victim.injury", "Provoked/unprovoked"],
+            values="Count",
+            title="No Data"
+        )
+        fig.update_layout(clickmode='event+select')
+        return fig
 
     filtered_df_local = pd.DataFrame(filtered_data)
     if filtered_df_local.empty:
-        empty_df = pd.DataFrame({"Shark.common.name": [], "Count": []})
-        return px.pie(empty_df, names="Shark.common.name", values="Count", title="No Data")
+        empty_df = pd.DataFrame({
+            "Shark.common.name": [],
+            "Victim.injury": [],
+            "Provoked/unprovoked": [],
+            "Count": []
+        })
+        fig = px.treemap(
+            empty_df,
+            path=["Shark.common.name", "Victim.injury", "Provoked/unprovoked"],
+            values="Count",
+            title="No Data"
+        )
+        fig.update_layout(clickmode='event+select')
+        return fig
 
-    pie_data = filtered_df_local.groupby("Shark.common.name").size().reset_index(name="Count")
-    fig = px.pie(pie_data, names="Shark.common.name", values="Count", title="Shark Species (Filtered)")
-    fig.update_traces(textposition='inside', textinfo='percent+label')
+    # Group by 3 levels and count incidents
+    tree_data = (
+        filtered_df_local
+        .groupby(["Shark.common.name", "Victim.injury", "Provoked/unprovoked"])
+        .size()
+        .reset_index(name="Count")
+    )
+
+    fig = px.treemap(
+        tree_data,
+        path=["Shark.common.name", "Victim.injury", "Provoked/unprovoked"],
+        values="Count",
+        title="Shark Incidents Treemap (Species -> Injury -> Provoked)"
+    )
+    # Enable clickmode so user can click nodes => we get "id" in clickData
+    fig.update_layout(clickmode='event+select')
     return fig
 
 
 # ------------------------------------------------------------------------------
-# 5) Update the Map to highlight pie-clicked species if any
+# 5) Update the Map to highlight the treemap-clicked path (species, injury, provoked) if any
 # ------------------------------------------------------------------------------
 @app.callback(
     Output("map-graph", "figure"),
@@ -460,7 +504,7 @@ def update_pie_chart_from_filtered_data(filtered_data):
         Input("pie-selected-species", "data")
     ]
 )
-def update_map_from_filtered_data_and_pie_click(filtered_data, pie_selected):
+def update_map_from_filtered_data_and_treemap_path(filtered_data, treemap_path):
     if not filtered_data:
         return px.scatter_mapbox(
             pd.DataFrame({"Latitude": [], "Longitude": [], "Incident Count": []}),
@@ -480,28 +524,52 @@ def update_map_from_filtered_data_and_pie_click(filtered_data, pie_selected):
             title="No Data"
         )
 
-    bubble_data = df_local.groupby(["Latitude", "Longitude", "Shark.common.name"]).size().reset_index(name="Count")
+    # If user clicked a Treemap node => we get a path like: 
+    #  "Bull shark/lacerations/unprovoked"
+    # or just "Bull shark" or "Bull shark/lacerations"
+    df_local["Highlight"] = "Other"
+    if treemap_path:
+        path_parts = treemap_path.split("/")
+        species_sel = path_parts[0] if len(path_parts) >= 1 else None
+        injury_sel = path_parts[1] if len(path_parts) >= 2 else None
+        provoked_sel = path_parts[2] if len(path_parts) >= 3 else None
 
-    # If the user clicked the pie => highlight only that species
-    if pie_selected:
-        bubble_data["Highlight"] = bubble_data["Shark.common.name"].apply(
-            lambda x: "Selected" if x == pie_selected else "Other"
-        )
+        # Build a boolean mask for each level that is present
+        mask = pd.Series([True]*len(df_local))
+        if species_sel:
+            mask &= (df_local["Shark.common.name"] == species_sel)
+        if injury_sel:
+            mask &= (df_local["Victim.injury"] == injury_sel)
+        if provoked_sel:
+            mask &= (df_local["Provoked/unprovoked"] == provoked_sel)
+
+        # Mark those rows as "Selected"
+        df_local.loc[mask, "Highlight"] = "Selected"
     else:
-        bubble_data["Highlight"] = "Other"  # no pie selection => all are "Other"
+        # No click => everything is "Other"
+        pass
 
+    # Now group for bubble sizing
+    bubble_data = (
+        df_local.groupby(["Latitude", "Longitude", "Highlight"])
+        .size()
+        .reset_index(name="Count")
+    )
+
+    # Build the scatter map
     fig = px.scatter_mapbox(
         bubble_data,
         lat="Latitude",
         lon="Longitude",
         size="Count",
         hover_name="Count",
-        color="Highlight",  # color by whether it's the clicked species or not
+        color="Highlight",  # "Selected" vs "Other"
         zoom=4,
         center={"lat": -25.0, "lon": 133.0},
         mapbox_style="open-street-map"
     )
-    # Let's adjust the color scale so that "Selected" is bright red, "Other" is blue
+
+    # Let's adjust the color scale so that "Selected" is red, "Other" is blue
     fig.update_traces(marker=dict(opacity=0.6), selector=dict(mode='markers'))
     fig.update_layout(
         coloraxis=dict(
