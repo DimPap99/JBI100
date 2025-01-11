@@ -15,10 +15,10 @@ server = app.server
 # ---------------------------------
 df = pd.read_csv("shark.csv")  # <-- Adjust path as needed
 df = df.dropna(subset=["Latitude", "Longitude"])
-# df["Date"] = pd.to_datetime(
-#     df["Incident.year"].astype(str) + "-" + df["Incident.month"].astype(str),
-#     errors="coerce"
-# )
+df["Date"] = pd.to_datetime(
+    df["Incident.year"].astype(str) + "-" + df["Incident.month"].astype(str),
+    errors="coerce"
+)
 
 # Build the list of species for the dropdown
 species_options = [
@@ -28,7 +28,6 @@ species_options = [
 
 df["Latitude"] = pd.to_numeric(df["Latitude"], errors="coerce")
 df["Longitude"] = pd.to_numeric(df["Longitude"], errors="coerce")
-
 # Define start and end dates for RangeSlider
 df = df.dropna(subset=["Date"])  # Ensure no missing values in Date
 df["Date"] = pd.to_datetime(df["Date"], errors="coerce")  # Handle parsing errors
@@ -49,15 +48,13 @@ app.layout = html.Div([
                 children=[
                     html.H2("DASH - SHARK INCIDENT DATA"),
                     html.P("Select a date (month/day) to filter incidents."),
-                    dcc.DatePickerSingle(
-                        id="date-picker",
-                        min_date_allowed=dt(1791, 1, 1),
-                        max_date_allowed=dt(2022, 12, 31),
-                        initial_visible_month=dt(2022, 1, 1),
-                        date=dt(2022, 1, 1).date(),
-                        display_format="MMMM D, YYYY",
-                    ),
                     dcc.RangeSlider(
+                        # id="date-slider",
+                        # min=start_year,
+                        # max=end_year,
+                        # value=[start_year, end_year],  # Default range
+                        # #marks={year: str(year) for year in years if year % 10 == 0},  # Label every 10 years
+                        # step=1,  # Allow year-by-year selection
                         id='date-slider',
                         min=start_year,
                         max=end_year,
@@ -112,6 +109,18 @@ app.layout = html.Div([
         ],
     ),
 
+    # Scatter Plot
+    html.Div(
+        id="scatter-plot-container",
+        style={"padding": "20px"},
+        children=[
+            html.H3("Scatter Plot of Shark Incidents"),
+            dcc.Graph(
+                id="scatter-plot",
+                config={"displayModeBar": True},  # Show interactive mode bar
+            ),
+        ],
+    ),
 ])
 
 # ------------------------------------------------------
@@ -120,39 +129,23 @@ app.layout = html.Div([
 @app.callback(
     Output("map-graph", "figure"),
     Input("date-slider", "value"),
-    Input("date-picker", "date"),
     Input("species-dropdown", "value"),
     Input("map-graph", "clickData"),
 )
-def update_graph(date_picked, year_range, selectedSpecies, clickData):
+def update_graph(year_range, selectedSpecies, clickData):
     # Filter data for selected month/day
-    # Default: Full dataset
-    filtered_df = df.copy()
-
-    # Determine which input triggered the callback
-    ctx = dash.callback_context
-    if not ctx.triggered:
-        triggered_input = None
-    else:
-        triggered_input = ctx.triggered[0]["prop_id"].split(".")[0]
-
-    # Apply filters based on the active input
-    if triggered_input == "date-picker" and date_picked:
-        # Filter by specific date
-        date_picked = pd.to_datetime(date_picked)
-        filtered_df = filtered_df[
-            (filtered_df["Date"].dt.month == date_picked.month)
-            & (filtered_df["Date"].dt.day == date_picked.day)
-        ]
-    elif triggered_input == "date-slider" and year_range:
-        # Filter by year range
-        start_year, end_year = year_range
-        filtered_df = filtered_df[
-            (filtered_df["Date"].dt.year >= start_year)
-            & (filtered_df["Date"].dt.year <= end_year)
-        ]
-
-
+    start_year, end_year = year_range
+    # date_picked = pd.to_datetime(datePicked)
+    # if pd.isnull(date_picked):
+    #     filtered_df = df.copy()
+    # else:
+        # filtered_df = df[
+        #     (df["Date"].dt.month == date_picked.month) &
+        #     (df["Date"].dt.day == date_picked.day)
+        # ]
+    filtered_df = df[
+        (df["Date"].dt.year >= start_year) & (df["Date"].dt.year <= end_year)
+    ]
 
     # Filter by species if selected
     if selectedSpecies:
