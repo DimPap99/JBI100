@@ -208,9 +208,94 @@ a {
   padding: unset;  
 }
 
+
+/* Modal content wrapper */
+.modal-content-wrapper {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 20px;
+  background-color: #f8f9fa; /* Light background for better contrast */
+  border-radius: 12px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+  font-family: 'Open Sans', sans-serif;
+}
+
+/* Text wrapper */
+.modal-text-wrapper {
+  flex: 2; /* Give more space to text */
+  padding-right: 20px; /* Space between text and image */
+}
+
+/* Shark species title */
+.modal-species-title {
+  font-size: 24px;
+  color: #2c3e50;
+  margin-bottom: 10px;
+  font-weight: bold;
+  letter-spacing: 1.1px;
+}
+
+/* Modal text */
+.modal-text {
+  font-size: 16px;
+  color: #34495e;
+  margin-bottom: 8px;
+  line-height: 1.5;
+}
+
+/* Pagination info (e.g., "Showing X of Y") */
+.modal-pagination {
+  font-size: 14px;
+  color: #7f8c8d;
+  margin-top: 16px;
+}
+
+/* Image wrapper */
+.modal-image-wrapper {
+  flex: 1; /* Smaller flex ratio for image */
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+/* Shark image */
+.modal-shark-image {
+  max-width: 200px;
+  height: auto;
+  border-radius: 10px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  border: 1px solid #ddd;
+}
+
+/* Blur effect for the background container */
+.blurred {
+  filter: blur(5px);
+  pointer-events: none; /* Prevent interactions with blurred content */
+  transition: filter 0.3s ease; /* Smooth transition */
+}
+
+/* Reset effect when the modal is closed */
 #background-container {
   transition: filter 0.3s ease;
 }
-#background-container.blurred {
-  filter: blur(5px);
+
+
+.div-for-charts {
+  display: flex;
+  flex-direction: column;
+  /* Remove or override any existing "height: 100vh;" here if it exists 
+     because we set it in Python, or set it to auto if you prefer */
+  height: auto;
+  width: 100%;
+  /* Let the Python code do overflowY: auto */
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  overflow: hidden; /* no scrollbars on body */
+  height: 100%;
+  width: 100%;
 }
