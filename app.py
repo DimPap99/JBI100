@@ -164,6 +164,11 @@ app.layout = html.Div([
                                     n_clicks=0,
                                     style={"marginLeft": "10px"}
                                 ),
+                                # Info Modal Button
+                                html.Button("Help",
+                                id="help-button",
+                                n_clicks=0,
+                                style={"marginLeft": "10px"}),
                             ], style={"marginBottom": "15px", "display": "flex", "alignItems": "center"}),
 
                             dcc.RangeSlider(
@@ -363,6 +368,47 @@ app.layout = html.Div([
                 ],
             ),
             html.Div(id="modal-incident-content"),
+        ],
+    ),
+    # Add a help modal
+    html.Div(
+    id="help-modal",
+    style={
+        "display": "none",
+        "position": "fixed",
+        "top": "20%",
+        "left": "30%",
+        "width": "40%",
+        "height": "auto",
+        "backgroundColor": "white",
+        "boxShadow": "0px 0px 10px rgba(0, 0, 0, 0.5)",
+        "zIndex": 1000,
+        "padding": "20px",
+        "borderRadius": "10px",
+        "color": "black",
+    },
+    children=[
+        html.Button(
+            "Close",
+            id="close-help-modal",
+            style={"float": "right", "margin": "10px"}
+        ),
+        html.Div(
+            children=[
+                html.H4("How to Use This Tool"),
+                html.P(
+                    "This dashboard provides an interactive interface for exploring "
+                    "shark incident data in Australia. Use the filters on the left to "
+                    "narrow down the data by date range, species, location, and more. "
+                    "Click on elements in the charts to focus on specific subsets of the data."
+                ),
+                html.P(
+                    "For example, click on a bar in the histogram to filter incidents by victim age. "
+                    "Use the map to explore incidents geographically and see details by clicking on a point."
+                    ),
+                ],
+                style={"color": "black"},
+            ),
         ],
     ),
 ])
@@ -1092,7 +1138,49 @@ def update_pcp_graph_no_grouping(filtered_data, treemap_path):
     fig.update_traces(line_color="blue")
     fig.update_layout(title="")
     return fig
+# ------------------------------------------------------------------------------
+# 9) Help Modal
+# ------------------------------------------------------------------------------
+@app.callback(
+    [
+        Output("help-modal", "style", allow_duplicate=True),
+        Output("background-container", "className", allow_duplicate=True),
+    ],
+    [
+        Input("help-button", "n_clicks"),
+        Input("close-help-modal", "n_clicks"),
+    ],
+    prevent_initial_call=True
+)
+def toggle_help_modal(help_clicks, close_help_clicks):
+    ctx = dash.callback_context
+    if not ctx.triggered:
+        raise PreventUpdate
+    triggered_id = ctx.triggered[0]["prop_id"].split(".")[0]
+    # Show modal when the Help button is clicked
+    if triggered_id == "help-button":
+        return (
+            {
+                "display": "block",
+                "position": "fixed",
+                "top": "20%",
+                "left": "30%",
+                "width": "40%",
+                "height": "auto",
+                "backgroundColor": "white",
+                "boxShadow": "0px 0px 10px rgba(0, 0, 0, 0.5)",
+                "zIndex": 1000,
+                "padding": "20px",
+                "borderRadius": "10px",
+            },
+            "blurred",
+        )
+    # Hide modal when the Close button is clicked
+    if triggered_id == "close-help-modal":
+        return {"display": "none"}, ""
+    raise PreventUpdate
 
+# ------------------------------------------------------------------------------
 
 # ------------------------------------------------------------------------------
 # Run
