@@ -48,6 +48,16 @@ df["Air.temperature.°C"] = pd.to_numeric(df.get("Air.temperature.°C"), errors=
 # Victim age
 df["Victim.age"] = pd.to_numeric(df.get("Victim.age"), errors="coerce")
 
+# Custom month and day order for dropdown
+custom_month_order = [
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December"
+]
+
+custom_day_order = [
+    "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"
+]
+
 # State filter
 state_options = [
     {"label": st, "value": st}
@@ -60,11 +70,13 @@ species_options = [
 ]
 month_options = [
     {"label": m, "value": m}
-    for m in df["Month"].dropna().unique()
+    for m in custom_month_order
+    if m in df["Month"].dropna().unique()
 ]
 dayofweek_options = [
     {"label": d, "value": d}
-    for d in df["DayOfWeek"].dropna().unique()
+    for d in custom_day_order
+    if d in df["DayOfWeek"].dropna().unique()
 ]
 victim_activity_options = [
     {"label": act, "value": act}
