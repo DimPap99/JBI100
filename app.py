@@ -224,12 +224,27 @@ app.layout = html.Div([
                                     "padding": "10px"
                                 },
                                 children=[
-                                    html.H4("Histogram: Victim Age", style={"paddingLeft": "12px"}),
-                                    # (A) Enable 'clickmode' for the histogram to register clickData.
+                                    html.H4("Histogram", style={"paddingLeft": "12px"}),
+
+                                    # Toggle Component for Histogram Type
+                                    dcc.RadioItems(
+                                        id="histogram-type",
+                                        options=[
+                                            {"label": "Victim Age", "value": "age"},
+                                            {"label": "State", "value": "state"},
+                                            {"label": "Month", "value": "month"},
+                                            {"label": "Day of Week", "value": "dayofweek"}
+                                        ],
+                                        value="age",  # Default to Victim Age
+                                        inline=True,
+                                        style={"marginBottom": "15px"}
+                                    ),
+
+                                    # Histogram Graph
                                     dcc.Graph(
                                         id="third-chart",
                                         style={"height": "85%", "width": "100%"},
-                                        config={"displayModeBar": False},  # optional
+                                        config={"displayModeBar": False},  # Optional
                                     )
                                 ]
                             ),
@@ -310,7 +325,7 @@ app.layout = html.Div([
     dcc.Store(id="filtered-data-store"),
     dcc.Store(id="pie-selected-species", data=None),
     # (1) NEW STORE FOR HISTOGRAM CLICK SELECTED AGE:
-    dcc.Store(id="histogram-age-store", data=None),
+    dcc.Store(id="histogram-click-store", data=None),
 
     # Modal
     html.Div(
@@ -368,7 +383,7 @@ app.layout = html.Div([
         Output("victim-activity-dropdown", "value"),
         Output("state-dropdown", "value"),
         # ALSO reset histogram-age selection on reset:
-        Output("histogram-age-store", "data", allow_duplicate=True),
+        Output("histogram-click-store", "data", allow_duplicate=True),
     ],
     [
         Input("apply-date-button", "n_clicks"),
@@ -496,17 +511,18 @@ def handle_treemap_click_and_reset(treemap_click, reset_clicks):
 # (2) CALLBACK FOR HISTOGRAM CLICK => Store selected 'Victim.age'
 # ------------------------------------------------------------------------------
 @app.callback(
-    Output("histogram-age-store", "data"),
+    Output("histogram-click-store", "data"),
     [
         Input("third-chart", "clickData"),
-        Input("reset-button", "n_clicks"),
+        Input("reset-button", "n_clicks")
     ],
+    [State("histogram-type", "value")],
     prevent_initial_call=True
 )
-def handle_histogram_click_and_reset(hist_click, reset_clicks):
+def handle_histogram_click(click_data, reset_clicks, histogram_type):
     """
-    If user clicks a histogram bar, store that 'x' as the selected age.
-    On reset, clear it.
+    Capture the clicked value from the histogram.
+    Reset when the reset button is clicked.
     """
     ctx = dash.callback_context
     if not ctx.triggered:
@@ -514,18 +530,13 @@ def handle_histogram_click_and_reset(hist_click, reset_clicks):
 
     triggered_id = ctx.triggered[0]["prop_id"].split(".")[0]
 
-    if triggered_id == "third-chart":
-        if hist_click and "points" in hist_click:
-            x_val = hist_click["points"][0].get("x")  # The bar's x or mid bin value.
-            if x_val is not None:
-                # We'll store it as an integer if possible.
-                try:
-                    return int(x_val)
-                except:
-                    return None
-        return dash.no_update
+    if triggered_id == "third-chart" and click_data:
+        # Get the clicked value (Victim Age or Day of Week)
+        clicked_value = click_data["points"][0].get("x")
+        return {"type": histogram_type, "value": clicked_value}
 
     elif triggered_id == "reset-button":
+        # Clear the selected histogram value on reset
         return None
 
     raise PreventUpdate
@@ -544,13 +555,13 @@ def handle_histogram_click_and_reset(hist_click, reset_clicks):
         Input("month-dropdown", "value"),
         Input("dayofweek-dropdown", "value"),
         Input("victim-activity-dropdown", "value"),
-        Input("histogram-age-store", "data"),  # NEW input for histogram age
+        Input("histogram-click-store", "data"),  # NEW input for histogram age
     ]
 )
 def update_filtered_data_store(
     slider_range, selected_states, selected_species,
-    map_selected, selected_months, selected_dows, selected_activities,
-    histogram_age
+    map_selected, selected_months, selected_dows,
+    selected_activities, histogram_click_data
 ):
     filtered_df_local = df.copy()
 
@@ -564,7 +575,11 @@ def update_filtered_data_store(
         ]
 
     # 2) State
-    if selected_states:
+    if histogram_click_data and histogram_click_data["type"] == "state":
+        filtered_df_local = filtered_df_local[
+            filtered_df_local["State"] == histogram_click_data["value"]
+        ]
+    elif selected_states:
         filtered_df_local = filtered_df_local[
             filtered_df_local["State"].isin(selected_states)
         ]
@@ -576,13 +591,21 @@ def update_filtered_data_store(
         ]
 
     # 4) Month
-    if selected_months:
+    if histogram_click_data and histogram_click_data["type"] == "month":
+        filtered_df_local = filtered_df_local[
+            filtered_df_local["Month"] == histogram_click_data["value"]
+        ]
+    elif selected_months:
         filtered_df_local = filtered_df_local[
             filtered_df_local["Month"].isin(selected_months)
         ]
 
     # 5) Day-of-week
-    if selected_dows:
+    if histogram_click_data and histogram_click_data["type"] == "dayofweek":
+        filtered_df_local = filtered_df_local[
+            filtered_df_local["DayOfWeek"] == histogram_click_data["value"]
+        ]
+    elif selected_dows:
         filtered_df_local = filtered_df_local[
             filtered_df_local["DayOfWeek"].isin(selected_dows)
         ]
@@ -593,22 +616,10 @@ def update_filtered_data_store(
             filtered_df_local["Victim.activity"].isin(selected_activities)
         ]
 
-    # 7) Map box select
-    if map_selected and "points" in map_selected:
-        points = map_selected["points"]
-        if points:
-            lats = [round(pt["lat"], 5) for pt in points]
-            lons = [round(pt["lon"], 5) for pt in points]
-            filtered_df_local = filtered_df_local[
-                filtered_df_local["Latitude"].isin(lats) &
-                filtered_df_local["Longitude"].isin(lons)
-            ]
-
-    # 8) Finally, filter by histogram age (if set)
-    if histogram_age is not None:
-        # We'll assume "Victim.age == histogram_age"
+    # 7) Victim Age
+    if histogram_click_data and histogram_click_data["type"] == "age":
         filtered_df_local = filtered_df_local[
-            filtered_df_local["Victim.age"] == histogram_age
+            filtered_df_local["Victim.age"] == histogram_click_data["value"]
         ]
 
     return filtered_df_local.to_dict("records")
@@ -957,24 +968,26 @@ def get_nav_button_styles(num_rows, current_idx, prev_style, next_style):
     Output("third-chart", "figure"),
     [
         Input("filtered-data-store", "data"),
-        Input("pie-selected-species", "data")
+        Input("pie-selected-species", "data"),
+        Input("histogram-type", "value"),  # New input for histogram type
     ]
 )
-def update_histogram_of_age(filtered_data, treemap_path):
+def update_histogram(filtered_data, treemap_path, histogram_type):
     if not filtered_data:
-        return px.scatter(title="No Data in Third Chart")
+        return px.scatter(title="No Data in Histogram")
 
     df_local = pd.DataFrame(filtered_data)
     if df_local.empty:
-        return px.scatter(title="No Data in Third Chart")
+        return px.scatter(title="No Data in Histogram")
 
+    # Subfilter by treemap path
     if treemap_path:
         path_parts = treemap_path.split("/")
         species_sel = path_parts[0] if len(path_parts) >= 1 else None
         injury_sel = path_parts[1] if len(path_parts) >= 2 else None
         provoked_sel = path_parts[2] if len(path_parts) >= 3 else None
 
-        mask = pd.Series([True]*len(df_local))
+        mask = pd.Series([True] * len(df_local))
         if species_sel:
             mask &= (df_local["Shark.common.name"] == species_sel)
         if injury_sel:
@@ -983,19 +996,33 @@ def update_histogram_of_age(filtered_data, treemap_path):
             mask &= (df_local["Provoked/unprovoked"] == provoked_sel)
         df_local = df_local[mask]
 
-    df_local["Victim.age"] = pd.to_numeric(df_local["Victim.age"], errors="coerce")
-    df_local = df_local.dropna(subset=["Victim.age"])
-    if df_local.empty:
-        return px.scatter(title="No Age Data to Show")
+    # Generate the histogram based on the selected type
+    if histogram_type == "age":
+        df_local["Victim.age"] = pd.to_numeric(df_local["Victim.age"], errors="coerce")
+        df_local = df_local.dropna(subset=["Victim.age"])
+        x_axis = "Victim.age"
+        title = "Histogram: Victim Age"
+    elif histogram_type == "dayofweek":
+        df_local = df_local.dropna(subset=["DayOfWeek"])
+        x_axis = "DayOfWeek"
+        title = "Histogram: Day of Week"
+    elif histogram_type == "state":
+        df_local = df_local.dropna(subset=["State"])
+        x_axis = "State"
+        title = "Histogram: State"
+    elif histogram_type == "month":
+        df_local = df_local.dropna(subset=["Month"])
+        x_axis = "Month"
+        title = "Histogram: Month"
+    else:
+        return px.scatter(title="Invalid Histogram Type")
 
-    # Make the histogram clickable: set 'clickmode' on the figure:
     fig = px.histogram(
         df_local,
-        x="Victim.age",
-        nbins=20,
-        title="Histogram: Victim Age (Treemap-Filtered)"
+        x=x_axis,
+        category_orders={"DayOfWeek": custom_day_order, "Month": custom_month_order},
+        title=title
     )
-    # (B) This is crucial so the "clickData" event is triggered properly
     fig.update_layout(
         clickmode="event+select",
         margin={"r": 0, "t": 40, "l": 0, "b": 0}
