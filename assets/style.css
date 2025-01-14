@@ -299,3 +299,25 @@ html, body {
   height: 100%;
   width: 100%;
 }
+
+/* Normal (blue) slider */
+.blue-slider .rc-slider-rail {
+  background-color: #636EFA !important; /* Plotly default blue */
+}
+.blue-slider .rc-slider-track {
+  background-color: #636EFA !important;
+}
+.blue-slider .rc-slider-handle {
+  border: 2px solid #636EFA !important;
+}
+
+/* Colorblind-friendly (grey) slider */
+.grey-slider .rc-slider-rail {
+  background-color: #666666 !important;
+}
+.grey-slider .rc-slider-track {
+  background-color: #666666 !important;
+}
+.grey-slider .rc-slider-handle {
+  border: 2px solid #666666 !important;
+}

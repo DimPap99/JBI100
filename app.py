@@ -110,24 +110,39 @@ species_image_map = {
     "lemon shark": "lemon-shark.jpg",
 }
 
+
 def get_shark_image(species_name: str) -> str:
     if not species_name or not isinstance(species_name, str):
         return "unknown.webp"
     clean = species_name.strip().lower()
     return species_image_map.get(clean, "unknown.webp")
 
-
 # ------------------------------------------------------------------------------
 # App Layout
 # ------------------------------------------------------------------------------
-app.layout = html.Div([
+app.layout = html.Div(style={"position": "relative"}, children=[
+
+    # (1) New Button & Store for toggling colorblind mode
+    html.Button(
+        "Toggle Colorblind Mode",
+        id="toggle-colorblind-button",
+        n_clicks=0,
+        style={
+            "position": "absolute",
+            "top": "10px",
+            "left": "10px",
+            "zIndex": 9999
+        }
+    ),
+    dcc.Store(id="colorblind-store", data=False),
+
     html.Div(
         id="background-container",
         children=[
             html.Div(
                 className="row",
                 children=[
-                    # Left Column (Controls) + Third Chart
+                    # Left Column (Controls + Third Chart)
                     html.Div(
                         className="four columns div-user-controls",
                         children=[
@@ -176,8 +191,10 @@ app.layout = html.Div([
                                     for i in range(0, len(unique_dates), 50)
                                 },
                                 tooltip={"placement": "bottom", "always_visible": True},
-                            ),
 
+                                # New className (default is "blue-slider" in normal mode)
+                                className="blue-slider"
+                            ),
                             html.P("Filters:"),
                             dcc.Dropdown(
                                 id="state-dropdown",
@@ -215,7 +232,7 @@ app.layout = html.Div([
                                 multi=True
                             ),
 
-                            # Third Chart Below the Filters -- Make histogram clickable
+                            # Third Chart (Histogram) below the Filters
                             html.Div(
                                 style={
                                     "marginTop": "20px",
@@ -226,7 +243,6 @@ app.layout = html.Div([
                                 children=[
                                     html.H4("Histogram", style={"paddingLeft": "12px"}),
 
-                                    # Toggle Component for Histogram Type
                                     dcc.RadioItems(
                                         id="histogram-type",
                                         options=[
@@ -235,16 +251,15 @@ app.layout = html.Div([
                                             {"label": "Month", "value": "month"},
                                             {"label": "Day of Week", "value": "dayofweek"}
                                         ],
-                                        value="age",  # Default to Victim Age
+                                        value="age",  # Default
                                         inline=True,
                                         style={"marginBottom": "15px"}
                                     ),
 
-                                    # Histogram Graph
                                     dcc.Graph(
                                         id="third-chart",
                                         style={"height": "85%", "width": "100%"},
-                                        config={"displayModeBar": False},  # Optional
+                                        config={"displayModeBar": False},
                                     )
                                 ]
                             ),
@@ -262,7 +277,7 @@ app.layout = html.Div([
                             "overflowY": "auto",
                         },
                         children=[
-                            # Map: ~ top 50%
+                            # Map: top 50%
                             html.Div(
                                 style={"flex": "0 0 50%", "marginBottom": "10px"},
                                 children=[
@@ -302,10 +317,7 @@ app.layout = html.Div([
                                             html.H4("Parallel Coordinates Plot", style={"paddingLeft": "12px"}),
                                             dcc.Graph(
                                                 id="pcp-graph",
-                                                style={
-                                                    "height": "85%",
-                                                    "width": "100%"
-                                                }
+                                                style={"height": "85%", "width": "100%"}
                                             )
                                         ]
                                     ),
@@ -324,7 +336,6 @@ app.layout = html.Div([
     dcc.Store(id="selected-incidents-store", data={"rows": [], "current_index": 0}),
     dcc.Store(id="filtered-data-store"),
     dcc.Store(id="pie-selected-species", data=None),
-    # (1) NEW STORE FOR HISTOGRAM CLICK SELECTED AGE:
     dcc.Store(id="histogram-click-store", data=None),
 
     # Modal
@@ -369,7 +380,37 @@ app.layout = html.Div([
 
 
 # ------------------------------------------------------------------------------
-# 1) Single Callback to Handle "Apply" AND "Reset"
+# (A) NEW CALLBACK: Toggle the colorblind-store
+# ------------------------------------------------------------------------------
+@app.callback(
+    Output("colorblind-store", "data"),
+    Input("toggle-colorblind-button", "n_clicks"),
+    State("colorblind-store", "data"),
+    prevent_initial_call=True
+)
+def toggle_colorblind_mode(n_clicks, current_value):
+    """
+    Simply flip the boolean in colorblind-store each time the button is clicked.
+    """
+    return not current_value
+
+# ------------------------------------------------------------------------------
+# colorblind year slider
+# ------------------------------------------------------------------------------
+@app.callback(
+    Output("date-slider", "className"),
+    Input("colorblind-store", "data")
+)
+def update_slider_classname(colorblind_active):
+    """
+    Toggle the slider's CSS class.
+    If colorblind_active=True, assign 'grey-slider';
+    otherwise 'blue-slider'.
+    """
+    return "grey-slider" if colorblind_active else "blue-slider"
+
+# ------------------------------------------------------------------------------
+# 1) Single Callback to Handle "Apply" AND "Reset"  (Unchanged)
 # ------------------------------------------------------------------------------
 @app.callback(
     [
@@ -382,7 +423,6 @@ app.layout = html.Div([
         Output("dayofweek-dropdown", "value"),
         Output("victim-activity-dropdown", "value"),
         Output("state-dropdown", "value"),
-        # ALSO reset histogram-age selection on reset:
         Output("histogram-click-store", "data", allow_duplicate=True),
     ],
     [
@@ -407,7 +447,6 @@ def apply_or_reset(
     triggered_id = ctx.triggered[0]["prop_id"].split(".")[0]
 
     if triggered_id == "apply-date-button":
-        # "Apply" => sync date inputs & slider.
         try:
             start_idx = date_to_index[pd.to_datetime(current_start_date)]
         except Exception:
@@ -420,11 +459,9 @@ def apply_or_reset(
             end_idx = current_slider[1]
             current_end_date = index_to_date[end_idx].strftime("%Y-%m-%d")
 
-        # Ensure in bounds
         start_idx = max(0, min(start_idx, len(unique_dates) - 1))
         end_idx = max(0, min(end_idx, len(unique_dates) - 1))
 
-        # If reversed, swap
         if start_idx > end_idx:
             start_idx, end_idx = end_idx, start_idx
 
@@ -436,47 +473,38 @@ def apply_or_reset(
             new_start_date,
             new_end_date,
             new_slider,
-            dash.no_update,  # keep species
-            dash.no_update,  # keep map selection
-            dash.no_update,  # keep month
-            dash.no_update,  # keep dayofweek
-            dash.no_update,  # keep victim activity
-            dash.no_update,  # keep state as is
-            dash.no_update,  # keep histogram selection as is
+            dash.no_update,
+            dash.no_update,
+            dash.no_update,
+            dash.no_update,
+            dash.no_update,
+            dash.no_update,
+            dash.no_update,
         )
 
     elif triggered_id == "reset-button":
-        # "Reset" => revert everything to default
         default_start = str(unique_dates[0].date())
         default_end = str(unique_dates[-1].date())
         default_slider_range = [0, len(unique_dates) - 1]
-        default_species = []
-        default_map_selection = None
-        default_month = []
-        default_dow = []
-        default_victim_activity = []
-        default_state = []
-        # Clear the histogram selection:
-        default_hist_age = None
 
         return (
             default_start,
             default_end,
             default_slider_range,
-            default_species,
-            default_map_selection,
-            default_month,
-            default_dow,
-            default_victim_activity,
-            default_state,
-            default_hist_age
+            [],
+            None,
+            [],
+            [],
+            [],
+            [],
+            None
         )
 
     raise PreventUpdate
 
 
 # ------------------------------------------------------------------------------
-# 2) COMBINED callback for treemap-click + reset => set pie-selected-species
+# 2) COMBINED callback for treemap-click + reset => set pie-selected-species (Unchanged)
 # ------------------------------------------------------------------------------
 @app.callback(
     Output("pie-selected-species", "data"),
@@ -497,7 +525,6 @@ def handle_treemap_click_and_reset(treemap_click, reset_clicks):
         if treemap_click and "points" in treemap_click:
             points = treemap_click["points"]
             if points:
-                # The "id" should hold the entire path, e.g. "Bull shark/lacerations/unprovoked"
                 return points[0].get("id")
         return dash.no_update
 
@@ -508,7 +535,7 @@ def handle_treemap_click_and_reset(treemap_click, reset_clicks):
 
 
 # ------------------------------------------------------------------------------
-# (2) CALLBACK FOR HISTOGRAM CLICK => Store selected 'Victim.age'
+# (2) CALLBACK FOR HISTOGRAM CLICK => Store selected 'Victim.age' 
 # ------------------------------------------------------------------------------
 @app.callback(
     Output("histogram-click-store", "data"),
@@ -520,10 +547,7 @@ def handle_treemap_click_and_reset(treemap_click, reset_clicks):
     prevent_initial_call=True
 )
 def handle_histogram_click(click_data, reset_clicks, histogram_type):
-    """
-    Capture the clicked value from the histogram.
-    Reset when the reset button is clicked.
-    """
+    
     ctx = dash.callback_context
     if not ctx.triggered:
         raise PreventUpdate
@@ -531,12 +555,10 @@ def handle_histogram_click(click_data, reset_clicks, histogram_type):
     triggered_id = ctx.triggered[0]["prop_id"].split(".")[0]
 
     if triggered_id == "third-chart" and click_data:
-        # Get the clicked value (Victim Age or Day of Week)
         clicked_value = click_data["points"][0].get("x")
         return {"type": histogram_type, "value": clicked_value}
 
     elif triggered_id == "reset-button":
-        # Clear the selected histogram value on reset
         return None
 
     raise PreventUpdate
@@ -555,7 +577,7 @@ def handle_histogram_click(click_data, reset_clicks, histogram_type):
         Input("month-dropdown", "value"),
         Input("dayofweek-dropdown", "value"),
         Input("victim-activity-dropdown", "value"),
-        Input("histogram-click-store", "data"),  # NEW input for histogram age
+        Input("histogram-click-store", "data"),
     ]
 )
 def update_filtered_data_store(
@@ -563,9 +585,10 @@ def update_filtered_data_store(
     map_selected, selected_months, selected_dows,
     selected_activities, histogram_click_data
 ):
+    
     filtered_df_local = df.copy()
 
-    # 1) Date range
+    # Date range
     if slider_range:
         start_date = index_to_date[slider_range[0]]
         end_date = index_to_date[slider_range[1]]
@@ -574,7 +597,7 @@ def update_filtered_data_store(
             (filtered_df_local["Date"] <= end_date)
         ]
 
-    # 2) State
+    # State
     if histogram_click_data and histogram_click_data["type"] == "state":
         filtered_df_local = filtered_df_local[
             filtered_df_local["State"] == histogram_click_data["value"]
@@ -584,13 +607,13 @@ def update_filtered_data_store(
             filtered_df_local["State"].isin(selected_states)
         ]
 
-    # 3) Species
+    # Species
     if selected_species:
         filtered_df_local = filtered_df_local[
             filtered_df_local["Shark.common.name"].isin(selected_species)
         ]
 
-    # 4) Month
+    # Month
     if histogram_click_data and histogram_click_data["type"] == "month":
         filtered_df_local = filtered_df_local[
             filtered_df_local["Month"] == histogram_click_data["value"]
@@ -600,7 +623,7 @@ def update_filtered_data_store(
             filtered_df_local["Month"].isin(selected_months)
         ]
 
-    # 5) Day-of-week
+    # Day-of-week
     if histogram_click_data and histogram_click_data["type"] == "dayofweek":
         filtered_df_local = filtered_df_local[
             filtered_df_local["DayOfWeek"] == histogram_click_data["value"]
@@ -610,13 +633,13 @@ def update_filtered_data_store(
             filtered_df_local["DayOfWeek"].isin(selected_dows)
         ]
 
-    # 6) Victim Activity
+    # Victim Activity
     if selected_activities:
         filtered_df_local = filtered_df_local[
             filtered_df_local["Victim.activity"].isin(selected_activities)
         ]
 
-    # 7) Victim Age
+    # Victim Age
     if histogram_click_data and histogram_click_data["type"] == "age":
         filtered_df_local = filtered_df_local[
             filtered_df_local["Victim.age"] == histogram_click_data["value"]
@@ -627,18 +650,19 @@ def update_filtered_data_store(
 
 # ------------------------------------------------------------------------------
 # 4) Build Treemap from filtered data
+#  
 # ------------------------------------------------------------------------------
 @app.callback(
     Output("pie-chart", "figure"),
-    Input("filtered-data-store", "data")
+    [
+        Input("filtered-data-store", "data"),
+        Input("colorblind-store", "data") 
+    ]
 )
-def update_treemap_from_filtered_data(filtered_data):
+def update_treemap_from_filtered_data(filtered_data, colorblind_active):
     if not filtered_data:
         empty_df = pd.DataFrame({
-            "Shark.common.name": [],
-            "Victim.injury": [],
-            "Provoked/unprovoked": [],
-            "Count": []
+            "Shark.common.name": [], "Victim.injury": [], "Provoked/unprovoked": [], "Count": []
         })
         fig = px.treemap(
             empty_df,
@@ -652,10 +676,7 @@ def update_treemap_from_filtered_data(filtered_data):
     filtered_df_local = pd.DataFrame(filtered_data)
     if filtered_df_local.empty:
         empty_df = pd.DataFrame({
-            "Shark.common.name": [],
-            "Victim.injury": [],
-            "Provoked/unprovoked": [],
-            "Count": []
+            "Shark.common.name": [], "Victim.injury": [], "Provoked/unprovoked": [], "Count": []
         })
         fig = px.treemap(
             empty_df,
@@ -666,7 +687,6 @@ def update_treemap_from_filtered_data(filtered_data):
         fig.update_layout(clickmode='event+select')
         return fig
 
-    # Group by 3 levels
     tree_data = (
         filtered_df_local
         .groupby(["Shark.common.name", "Victim.injury", "Provoked/unprovoked"])
@@ -680,27 +700,43 @@ def update_treemap_from_filtered_data(filtered_data):
         values="Count",
         title="Shark Incidents Treemap (Species -> Injury -> Provoked)"
     )
-    # Make treemap clickable
     fig.update_layout(clickmode='event+select')
+
+    # Colorblind-friendly or default
+    if colorblind_active:
+        fig.update_traces(marker_colorscale="Greys")  # Example colorblind-friendly scale
+    else:
+        fig.update_traces(marker_colorscale="RdBu")       # Original or any other scale
+
     return fig
 
 
 # ------------------------------------------------------------------------------
 # 5) Update Map to highlight the treemap-clicked path
+
 # ------------------------------------------------------------------------------
+# 5) Update Map to highlight the treemap-clicked path
+# (Now includes colorblind-store as Input)
+
 @app.callback(
     Output("map-graph", "figure"),
     [
         Input("filtered-data-store", "data"),
-        Input("pie-selected-species", "data")
+        Input("pie-selected-species", "data"),
+        Input("colorblind-store", "data")  # NEW input
     ]
 )
-def update_map_from_filtered_data_and_treemap_path(filtered_data, treemap_path):
+def update_map_from_filtered_data_and_treemap_path(filtered_data, treemap_path, colorblind_active):
+
+    # 1) If no data, return empty figure
     if not filtered_data:
         return px.scatter_mapbox(
             pd.DataFrame({"Latitude": [], "Longitude": [], "Incident Count": []}),
-            lat="Latitude", lon="Longitude", size="Incident Count",
-            zoom=4, center={"lat": -25.0, "lon": 133.0},
+            lat="Latitude",
+            lon="Longitude",
+            size="Incident Count",
+            zoom=4,
+            center={"lat": -25.0, "lon": 133.0},
             mapbox_style="open-street-map",
             title="No Data"
         )
@@ -709,12 +745,16 @@ def update_map_from_filtered_data_and_treemap_path(filtered_data, treemap_path):
     if df_local.empty:
         return px.scatter_mapbox(
             pd.DataFrame({"Latitude": [], "Longitude": [], "Incident Count": []}),
-            lat="Latitude", lon="Longitude", size="Incident Count",
-            zoom=4, center={"lat": -25.0, "lon": 133.0},
+            lat="Latitude",
+            lon="Longitude",
+            size="Incident Count",
+            zoom=4,
+            center={"lat": -25.0, "lon": 133.0},
             mapbox_style="open-street-map",
             title="No Data"
         )
 
+    # 2) Highlight "Selected" vs. "Other", same as before
     df_local["Highlight"] = "Other"
     if treemap_path:
         path_parts = treemap_path.split("/")
@@ -738,6 +778,7 @@ def update_map_from_filtered_data_and_treemap_path(filtered_data, treemap_path):
         .reset_index(name="Count")
     )
 
+    # 3) Build the figure
     fig = px.scatter_mapbox(
         bubble_data,
         lat="Latitude",
@@ -747,23 +788,39 @@ def update_map_from_filtered_data_and_treemap_path(filtered_data, treemap_path):
         color="Highlight",
         zoom=4,
         center={"lat": -25.0, "lon": 133.0},
-        mapbox_style="open-street-map"
+        mapbox_style="open-street-map"  # original
     )
+
+    # Keep your original marker opacity
     fig.update_traces(marker=dict(opacity=0.6), selector=dict(mode='markers'))
+
+    # 4) Switch color scales based on colorblind_active
+    #    - If colorblind mode is ON, use a colorblind-friendly scale
+    #    - If colorblind mode is OFF, keep the original "blue -> red" 
+    if colorblind_active:
+        chosen_scale = [
+            [0, "#3B528B"],  
+            [0.5, "#21908C"], 
+            [1, "#5DC863"] 
+        ]
+    else:
+        chosen_scale = [
+            [0, "blue"],
+            [0.5, "blue"],
+            [0.5, "red"],
+            [1, "red"],
+        ]
+
     fig.update_layout(
         coloraxis=dict(
-            colorscale=[
-                [0, "blue"],
-                [0.5, "blue"],
-                [0.5, "red"],
-                [1, "red"],
-            ],
-            showscale=False,
+            colorscale=chosen_scale,
+            showscale=False
         ),
         title="Shark Incidents Density",
         margin={"r": 0, "t": 0, "l": 0, "b": 0},
         dragmode="select"
     )
+
     return fig
 
 
@@ -807,11 +864,9 @@ def handle_modal_and_incidents(
     prev_style = {"marginRight": "20px", "padding": "8px 16px"}
     next_style = {"padding": "8px 16px"}
 
-    # If user closed
     if "close-modal" in triggered_id:
         return default_style, default_store, default_content, prev_style, next_style, no_blur
 
-    # Filter by slider
     if slider_range:
         start_date = index_to_date[slider_range[0]]
         end_date = index_to_date[slider_range[1]]
@@ -819,11 +874,9 @@ def handle_modal_and_incidents(
     else:
         filter_df = df.copy()
 
-    # Filter by species
     if selectedSpecies:
         filter_df = filter_df[filter_df["Shark.common.name"].isin(selectedSpecies)]
 
-    # If map clicked => open modal
     if "map-graph.clickData" in triggered_id and clickData:
         lat_clicked = round(clickData["points"][0]["lat"], 5)
         lon_clicked = round(clickData["points"][0]["lon"], 5)
@@ -851,7 +904,6 @@ def handle_modal_and_incidents(
 
         new_store = {"rows": rows, "current_index": 0}
         content = build_modal_content(rows, 0)
-
         prev_style, next_style = get_nav_button_styles(len(rows), 0, prev_style, next_style)
         modal_style = {
             "display": "block",
@@ -868,7 +920,6 @@ def handle_modal_and_incidents(
         }
         return modal_style, new_store, content, prev_style, next_style, blurred
 
-    # If Prev/Next
     rows = store_data.get("rows", [])
     current_idx = store_data.get("current_index", 0)
     if not rows:
@@ -900,9 +951,6 @@ def handle_modal_and_incidents(
     return modal_style, updated_store, content, prev_style, next_style, blurred
 
 
-# ------------------------------------------------------------------------------
-# Helpers for Modal
-# ------------------------------------------------------------------------------
 def build_modal_content(rows, idx):
     if not rows or idx < 0 or idx >= len(rows):
         return html.Div("No incident data available")
@@ -962,17 +1010,18 @@ def get_nav_button_styles(num_rows, current_idx, prev_style, next_style):
 
 
 # ------------------------------------------------------------------------------
-# 7) Third Chart: Histogram by Victim Age (clickable)
+# 7) Third Chart (Histogram):  
 # ------------------------------------------------------------------------------
 @app.callback(
     Output("third-chart", "figure"),
     [
         Input("filtered-data-store", "data"),
         Input("pie-selected-species", "data"),
-        Input("histogram-type", "value"),  # New input for histogram type
+        Input("histogram-type", "value"),
+        Input("colorblind-store", "data")  # colorblind option
     ]
 )
-def update_histogram(filtered_data, treemap_path, histogram_type):
+def update_histogram(filtered_data, treemap_path, histogram_type, colorblind_active):
     if not filtered_data:
         return px.scatter(title="No Data in Histogram")
 
@@ -980,7 +1029,6 @@ def update_histogram(filtered_data, treemap_path, histogram_type):
     if df_local.empty:
         return px.scatter(title="No Data in Histogram")
 
-    # Subfilter by treemap path
     if treemap_path:
         path_parts = treemap_path.split("/")
         species_sel = path_parts[0] if len(path_parts) >= 1 else None
@@ -996,7 +1044,6 @@ def update_histogram(filtered_data, treemap_path, histogram_type):
             mask &= (df_local["Provoked/unprovoked"] == provoked_sel)
         df_local = df_local[mask]
 
-    # Generate the histogram based on the selected type
     if histogram_type == "age":
         df_local["Victim.age"] = pd.to_numeric(df_local["Victim.age"], errors="coerce")
         df_local = df_local.dropna(subset=["Victim.age"])
@@ -1023,6 +1070,13 @@ def update_histogram(filtered_data, treemap_path, histogram_type):
         category_orders={"DayOfWeek": custom_day_order, "Month": custom_month_order},
         title=title
     )
+
+    # Choose color palette
+    if colorblind_active:
+        fig.update_traces(marker_color="#3B528B")  # example colorblind-friendly
+    else:
+        fig.update_traces(marker_color="#636EFA")  # Plotly default
+
     fig.update_layout(
         clickmode="event+select",
         margin={"r": 0, "t": 40, "l": 0, "b": 0}
@@ -1031,16 +1085,17 @@ def update_histogram(filtered_data, treemap_path, histogram_type):
 
 
 # ------------------------------------------------------------------------------
-# 8) PCP (Unchanged except for subfiltering by treemap)
+# 8) PCP: (B) ADD colorblind-store as Input
 # ------------------------------------------------------------------------------
 @app.callback(
     Output("pcp-graph", "figure"),
     [
         Input("filtered-data-store", "data"),
-        Input("pie-selected-species", "data")
+        Input("pie-selected-species", "data"),
+        Input("colorblind-store", "data")  # NEW
     ]
 )
-def update_pcp_graph_no_grouping(filtered_data, treemap_path):
+def update_pcp_graph_no_grouping(filtered_data, treemap_path, colorblind_active):
     if not filtered_data:
         return px.scatter(title="No Data in PCP")
 
@@ -1048,7 +1103,6 @@ def update_pcp_graph_no_grouping(filtered_data, treemap_path):
     if df_local.empty:
         return px.scatter(title="No Data in PCP")
 
-    # Subfilter by treemap path
     if treemap_path:
         path_parts = treemap_path.split("/")
         species_sel = path_parts[0] if len(path_parts) >= 1 else None
@@ -1089,7 +1143,14 @@ def update_pcp_graph_no_grouping(filtered_data, treemap_path):
             "Air.temperature.°C": "Air Temp (°C)"
         }
     )
-    fig.update_traces(line_color="blue")
+
+    if colorblind_active:
+        # example color that stands out well for colorblind
+        fig.update_traces(line_color="#3B528B")
+    else:
+        # original color
+        fig.update_traces(line_color="blue")
+
     fig.update_layout(title="")
     return fig
 
