@@ -38,6 +38,7 @@ unique_dates = df["Date"].dropna().unique()
 date_to_index = {date: i for i, date in enumerate(unique_dates)}
 index_to_date = {i: date for i, date in enumerate(unique_dates)}
 
+
 # Convert numeric columns
 df["Shark.length.m"] = pd.to_numeric(df.get("Shark.length.m"), errors="coerce")
 df["Depth.of.incident.m"] = pd.to_numeric(df.get("Depth.of.incident.m"), errors="coerce")
@@ -281,7 +282,8 @@ app.layout = html.Div(style={"position": "relative"}, children=[
                                             {"label": "Victim Age", "value": "age"},
                                             {"label": "State", "value": "state"},
                                             {"label": "Month", "value": "month"},
-                                            {"label": "Day of Week", "value": "dayofweek"}
+                                            {"label": "Day of Week", "value": "dayofweek"},
+                                            {"label": "Site category", "value": "sitecategory"},
                                         ],
                                         value="age",  # Default
                                         inline=True,
@@ -735,7 +737,8 @@ def update_filtered_data_store(
             filtered_df_local = filtered_df_local[filtered_df_local["Month"].isin(bin_list)]
         elif hist_type == "dayofweek":
             filtered_df_local = filtered_df_local[filtered_df_local["DayOfWeek"].isin(bin_list)]
-
+        elif hist_type == "sitecategory":
+            filtered_df_local = filtered_df_local[filtered_df_local["Site.category"].isin(bin_list)]
     return filtered_df_local.to_dict("records")
 
 @app.callback(
@@ -1176,6 +1179,10 @@ def update_histogram(filtered_data, treemap_path, histogram_type, colorblind_act
         df_local = df_local.dropna(subset=["Month"])
         x_axis = "Month"
         title = "Histogram: Month"
+    elif histogram_type == "sitecategory":
+        df_local = df_local.dropna(subset=["Site.category"])
+        x_axis = "Site.category"
+        title = "Histogram: Site Category"
     else:
         return px.scatter(title="Invalid Histogram Type")
 
