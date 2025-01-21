@@ -39,12 +39,37 @@ date_to_index = {date: i for i, date in enumerate(unique_dates)}
 index_to_date = {i: date for i, date in enumerate(unique_dates)}
 
 # Convert numeric columns
-df["Shark.length.m"] = pd.to_numeric(df.get("Shark.length.m"), errors="coerce")
-df["Depth.of.incident.m"] = pd.to_numeric(df.get("Depth.of.incident.m"), errors="coerce")
-df["Distance.to.shore.m"] = pd.to_numeric(df.get("Distance.to.shore.m"), errors="coerce")
-df["Water.visability.m"] = pd.to_numeric(df.get("Water.visability.m"), errors="coerce")
-df["Air.temperature.°C"] = pd.to_numeric(df.get("Air.temperature.°C"), errors="coerce")
+# df["Shark.length.m"] = pd.to_numeric(df.get("Shark.length.m"), errors="coerce")
+# df["Depth.of.incident.m"] = pd.to_numeric(df.get("Depth.of.incident.m"), errors="coerce")
+# df["Distance.to.shore.m"] = pd.to_numeric(df.get("Distance.to.shore.m"), errors="coerce")
+# df["Water.visability.m"] = pd.to_numeric(df.get("Water.visability.m"), errors="coerce")
+# df["Air.temperature.°C"] = pd.to_numeric(df.get("Air.temperature.°C"), errors="coerce")
 
+def categorical_to_numerical(field_name, data):
+    custom_mapping = {}
+    unique_categories = data[field_name].unique()
+    # dynamic custom mapping
+    for idx, category in enumerate(unique_categories):
+        custom_mapping[category] = idx + 1
+    # new column's name
+    mapped_column = field_name + '.mapped'
+    mapped_column = str(mapped_column)
+    data[mapped_column] = data[field_name].map(custom_mapping)
+    return data
+
+## Site.category cleaning
+df["Site.category"] = df["Site.category"]. replace(['Coastal','Ocean/pelagic', 'other: fish farm'],
+                                                       ['coastal','ocean/pelagic', 'fish farm'] )
+
+# adding column with mapped site.category
+df = categorical_to_numerical('Site.category', df)
+
+## Injury.severity
+df["Injury.severity"] = df["Injury.severity"]. replace(['other: teeth marks', 'fatality'],
+                                                       ['teeth marks','fatal'] )
+df = categorical_to_numerical('Injury.severity', df)
+
+df["Distance.to.shore.m"] = pd.to_numeric(df.get("Distance.to.shore.m"), errors="coerce")
 # Victim age
 df["Victim.age"] = pd.to_numeric(df.get("Victim.age"), errors="coerce")
 
@@ -1086,6 +1111,60 @@ def update_histogram(filtered_data, treemap_path, histogram_type):
         Input("pie-selected-species", "data")
     ]
 )
+# def update_pcp_graph_no_grouping(filtered_data, treemap_path):
+#     if not filtered_data:
+#         return px.scatter(title="No Data in PCP")
+
+#     df_local = pd.DataFrame(filtered_data)
+#     if df_local.empty:
+#         return px.scatter(title="No Data in PCP")
+
+#     # Subfilter by treemap path
+#     if treemap_path:
+#         path_parts = treemap_path.split("/")
+#         species_sel = path_parts[0] if len(path_parts) >= 1 else None
+#         injury_sel = path_parts[1] if len(path_parts) >= 2 else None
+#         provoked_sel = path_parts[2] if len(path_parts) >= 3 else None
+
+#         mask = pd.Series([True]*len(df_local))
+#         if species_sel:
+#             mask &= (df_local["Shark.common.name"] == species_sel)
+#         if injury_sel:
+#             mask &= (df_local["Victim.injury"] == injury_sel)
+#         if provoked_sel:
+#             mask &= (df_local["Provoked/unprovoked"] == provoked_sel)
+#         df_local = df_local[mask]
+
+#     numeric_cols = [
+#         "Shark.length.m",
+#         "Depth.of.incident.m",
+#         "Distance.to.shore.m",
+#         "Water.visability.m",
+#         "Air.temperature.°C"
+#     ]
+#     for c in numeric_cols:
+#         df_local[c] = pd.to_numeric(df_local[c], errors="coerce")
+
+#     df_local = df_local.dropna(subset=numeric_cols)
+#     if df_local.empty:
+#         return px.scatter(title="No Data for PCP")
+
+#     fig = px.parallel_coordinates(
+#         df_local,
+#         dimensions=numeric_cols,
+#         labels={
+#             "Shark.length.m": "Shark Length (m)",
+#             "Depth.of.incident.m": "Depth (m)",
+#             "Distance.to.shore.m": "Shore Dist (m)",
+#             "Water.visability.m": "Visibility (m)",
+#             "Air.temperature.°C": "Air Temp (°C)"
+#         }
+#     )
+#     fig.update_traces(line_color="blue")
+#     fig.update_layout(title="")
+#     return fig
+
+# New Attempt
 def update_pcp_graph_no_grouping(filtered_data, treemap_path):
     if not filtered_data:
         return px.scatter(title="No Data in PCP")
@@ -1111,11 +1190,9 @@ def update_pcp_graph_no_grouping(filtered_data, treemap_path):
         df_local = df_local[mask]
 
     numeric_cols = [
-        "Shark.length.m",
-        "Depth.of.incident.m",
-        "Distance.to.shore.m",
-        "Water.visability.m",
-        "Air.temperature.°C"
+        "Site.category.mapped",
+        "Injury.severity.mapped",
+        "Distance.to.shore.m"
     ]
     for c in numeric_cols:
         df_local[c] = pd.to_numeric(df_local[c], errors="coerce")
@@ -1128,11 +1205,9 @@ def update_pcp_graph_no_grouping(filtered_data, treemap_path):
         df_local,
         dimensions=numeric_cols,
         labels={
-            "Shark.length.m": "Shark Length (m)",
-            "Depth.of.incident.m": "Depth (m)",
-            "Distance.to.shore.m": "Shore Dist (m)",
-            "Water.visability.m": "Visibility (m)",
-            "Air.temperature.°C": "Air Temp (°C)"
+            "Site.category.mapped": "Site ",
+            "Injury.severity.mapped": "Type pf injury",
+            "Distance.to.shore.m": "Shore Dist (m)"
         }
     )
     fig.update_traces(line_color="blue")
