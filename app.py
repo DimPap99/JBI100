@@ -1168,6 +1168,8 @@ def update_histogram(filtered_data, treemap_path, histogram_type):
 def update_pcp_graph_no_grouping(filtered_data, treemap_path):
     if not filtered_data:
         return px.scatter(title="No Data in PCP")
+    
+
 
     df_local = pd.DataFrame(filtered_data)
     if df_local.empty:
