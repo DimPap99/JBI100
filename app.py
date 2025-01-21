@@ -120,10 +120,11 @@ def get_shark_image(species_name: str) -> str:
 
 # Define colorblind-friendly and default palettes
 CB_COLOR_CYCLE = [
-    '#377eb8', '#ff7f00', '#4daf4a',
-    '#f781bf', '#a65628', '#984ea3',
-    '#999999', '#e41a1c', '#dede00'
+    '#0072B2', '#D55E00', '#F0E442',
+    '#009E73', '#56B4E9', '#CC79A7',
+    '#E69F00', '#000000'
 ]
+
 
 DEFAULT_COLOR_CYCLE = px.colors.qualitative.Plotly  # Default Plotly palette
 
@@ -343,7 +344,7 @@ app.layout = html.Div(style={"position": "relative"}, children=[
                                         style={"flex": "1", "marginRight": "5px"},
                                         children=[
                                             html.H4(
-                                                "Box-Selected Data (Treemap)",
+                                                "Stacked Bar Chart",
                                                 style={"paddingLeft": "12px"}
                                             ),
                                             dcc.Graph(
@@ -627,25 +628,20 @@ def apply_or_reset(
     ],
     prevent_initial_call=True
 )
-def handle_treemap_click_and_reset(treemap_click, reset_clicks):
+def handle_bar_click_and_reset(bar_click, reset_clicks):
     ctx = dash.callback_context
     if not ctx.triggered:
         raise PreventUpdate
 
     triggered_id = ctx.triggered[0]["prop_id"].split(".")[0]
 
-    if triggered_id == "pie-chart":
-        if treemap_click and "points" in treemap_click:
-            points = treemap_click["points"]
-            if points:
-                return points[0].get("id")
-        return dash.no_update
-
-    elif triggered_id == "reset-button":
+    if triggered_id == "reset-button":
         return None
 
-    raise PreventUpdate
+    if bar_click and "points" in bar_click:
+        return bar_click["points"][0]["customdata"]
 
+    return dash.no_update
 
 # ------------------------------------------------------------------------------
 # (2) CALLBACK FOR HISTOGRAM CLICK => Store selected 'Victim.age' 
@@ -779,68 +775,74 @@ def update_data_on_map_selection(selected_data, current_data):
     return filtered_df.to_dict("records")
 
 # ------------------------------------------------------------------------------
-# 4) Build Treemap from filtered data
+# 4) Build stacked bar chart from filtered data
 #  
 # ------------------------------------------------------------------------------
 @app.callback(
-    Output("pie-chart", "figure"),
+    Output("pie-chart", "figure"),  # or rename to "stacked-bar-chart"
     [
         Input("filtered-data-store", "data"),
-        Input("colorblind-store", "data") ,
+        Input("colorblind-store", "data"),
     ]
 )
-def update_treemap_from_filtered_data(filtered_data, colorblind_active):
+def update_stacked_bar(filtered_data, colorblind_active):
     if not filtered_data:
-        empty_df = pd.DataFrame({
-            "Shark.common.name": [], "Victim.injury": [], "Provoked/unprovoked": [], "Count": []
-        })
-        fig = px.treemap(
-            empty_df,
-            path=["Shark.common.name", "Victim.injury", "Provoked/unprovoked"],
-            values="Count",
-            title="No Data"
-        )
+        # Return an empty figure
+        fig = px.bar(title="No Data")
         fig.update_layout(clickmode='event+select')
         return fig
 
     filtered_df_local = pd.DataFrame(filtered_data)
     if filtered_df_local.empty:
-        empty_df = pd.DataFrame({
-            "Shark.common.name": [], "Victim.injury": [], "Provoked/unprovoked": [], "Count": []
-        })
-        fig = px.treemap(
-            empty_df,
-            path=["Shark.common.name", "Victim.injury", "Provoked/unprovoked"],
-            values="Count",
-            title="No Data"
-        )
+        fig = px.bar(title="No Data")
         fig.update_layout(clickmode='event+select')
         return fig
 
-    tree_data = (
+    # 1) Group by species and provocation only
+    bar_data = (
         filtered_df_local
-        .groupby(["Shark.common.name", "Victim.injury", "Provoked/unprovoked"])
+        .groupby(["Shark.common.name", "Provoked/unprovoked"])
         .size()
         .reset_index(name="Count")
     )
 
-    # Use the global color sequence function
+    # 2) Compute total count *per species* (summing all provocation statuses)
+    species_totals = (
+        bar_data.groupby("Shark.common.name")["Count"]
+        .sum()
+        .sort_values(ascending=False)  # Sort descending
+    )
+    # Convert sorted index to a list
+    sorted_species_list = species_totals.index.tolist()
+
     color_discrete_sequence = get_color_discrete_sequence(colorblind_active)
 
-    # Create the treemap
-    fig = px.treemap(
-        tree_data,
-        path=["Shark.common.name", "Victim.injury", "Provoked/unprovoked"],
-        values="Count",
-        title="Shark Incidents Treemap (Species -> Injury -> Provoked)",
-        color="Shark.common.name",
-        color_discrete_sequence=color_discrete_sequence
+    # Build the stacked bar
+    fig = px.bar(
+    bar_data,
+    x="Shark.common.name",
+    y="Count",
+    color="Provoked/unprovoked",
+    barmode="stack",
+    color_discrete_sequence=color_discrete_sequence,
+    category_orders={"Shark.common.name": sorted_species_list},
     )
+
+# Create a combined path so we can store it
+    fig.update_traces(
+        customdata=[
+            f"{row['Shark.common.name']}/{row['Provoked/unprovoked']}"
+            for _, row in bar_data.iterrows()
+        ]
+    )
+
+    # This ensures click events are captured
     fig.update_layout(
-        dragmode="select",  # Enable box selection
-        margin={"r": 0, "t": 40, "l": 0, "b": 0},)
-        # clickmode='event+select')
+        clickmode='event+select',
+        margin={"r": 0, "t": 40, "l": 0, "b": 0},
+    )
     return fig
+
 
 
 # ------------------------------------------------------------------------------
@@ -891,14 +893,11 @@ def update_map_from_filtered_data_and_treemap_path(filtered_data, treemap_path, 
     if treemap_path:
         path_parts = treemap_path.split("/")
         species_sel = path_parts[0] if len(path_parts) >= 1 else None
-        injury_sel = path_parts[1] if len(path_parts) >= 2 else None
-        provoked_sel = path_parts[2] if len(path_parts) >= 3 else None
+        provoked_sel = path_parts[1] if len(path_parts) >= 2 else None
 
         mask = pd.Series([True]*len(df_local))
         if species_sel:
             mask &= (df_local["Shark.common.name"] == species_sel)
-        if injury_sel:
-            mask &= (df_local["Victim.injury"] == injury_sel)
         if provoked_sel:
             mask &= (df_local["Provoked/unprovoked"] == provoked_sel)
 
@@ -1150,14 +1149,11 @@ def update_histogram(filtered_data, treemap_path, histogram_type, colorblind_act
     if treemap_path:
         path_parts = treemap_path.split("/")
         species_sel = path_parts[0] if len(path_parts) >= 1 else None
-        injury_sel = path_parts[1] if len(path_parts) >= 2 else None
-        provoked_sel = path_parts[2] if len(path_parts) >= 3 else None
+        provoked_sel = path_parts[1] if len(path_parts) >= 2 else None
 
         mask = pd.Series([True] * len(df_local))
         if species_sel:
             mask &= (df_local["Shark.common.name"] == species_sel)
-        if injury_sel:
-            mask &= (df_local["Victim.injury"] == injury_sel)
         if provoked_sel:
             mask &= (df_local["Provoked/unprovoked"] == provoked_sel)
         df_local = df_local[mask]
@@ -1190,7 +1186,8 @@ def update_histogram(filtered_data, treemap_path, histogram_type, colorblind_act
         df_local,
         x=x_axis,
         category_orders={"DayOfWeek": custom_day_order, "Month": custom_month_order},
-        title=title
+        title=title,
+        barnorm = None
     )
 
     # Choose color palette
@@ -1228,14 +1225,11 @@ def update_pcp_graph_no_grouping(filtered_data, treemap_path, colorblind_active)
     if treemap_path:
         path_parts = treemap_path.split("/")
         species_sel = path_parts[0] if len(path_parts) >= 1 else None
-        injury_sel = path_parts[1] if len(path_parts) >= 2 else None
-        provoked_sel = path_parts[2] if len(path_parts) >= 3 else None
+        provoked_sel = path_parts[1] if len(path_parts) >= 3 else None
 
         mask = pd.Series([True]*len(df_local))
         if species_sel:
             mask &= (df_local["Shark.common.name"] == species_sel)
-        if injury_sel:
-            mask &= (df_local["Victim.injury"] == injury_sel)
         if provoked_sel:
             mask &= (df_local["Provoked/unprovoked"] == provoked_sel)
         df_local = df_local[mask]
