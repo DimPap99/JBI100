@@ -41,6 +41,10 @@ index_to_date = {i: date for i, date in enumerate(unique_dates)}
 # Convert site category to title case
 df["Site.category"] = df["Site.category"].str.title()
 
+# Fix typos and convert to title case
+df['Victim.activity'] = df['Victim.activity'].str.replace("snorkeling", "snorkelling")
+df['Victim.activity'] = df['Victim.activity'].str.replace("diving, collecting", "diving")
+
 
 # Convert numeric columns
 df["Shark.length.m"] = pd.to_numeric(df.get("Shark.length.m"), errors="coerce")
@@ -48,6 +52,8 @@ df["Depth.of.incident.m"] = pd.to_numeric(df.get("Depth.of.incident.m"), errors=
 df["Distance.to.shore.m"] = pd.to_numeric(df.get("Distance.to.shore.m"), errors="coerce")
 df["Water.visability.m"] = pd.to_numeric(df.get("Water.visability.m"), errors="coerce")
 df["Air.temperature.°C"] = pd.to_numeric(df.get("Air.temperature.°C"), errors="coerce")
+df["Total.water.depth.m"] = pd.to_numeric(df.get("Total.water.depth.m"), errors="coerce")
+df["Time.in.water.min"] = pd.to_numeric(df.get("Time.in.water.min"), errors="coerce")
 
 # Victim age
 df["Victim.age"] = pd.to_numeric(df.get("Victim.age"), errors="coerce")
@@ -288,6 +294,7 @@ app.layout = html.Div(style={"position": "relative"}, children=[
                                             {"label": "Month", "value": "month"},
                                             {"label": "Day of Week", "value": "dayofweek"},
                                             {"label": "Site category", "value": "sitecategory"},
+                                            {"label": "Victim activity", "value": "activity"},
                                         ],
                                         value="age",  # Default
                                         inline=True,
@@ -725,6 +732,7 @@ def update_filtered_data_store(
         filtered_df_local = filtered_df_local[filtered_df_local["DayOfWeek"].isin(selected_dows)]
     if selected_activities:
         filtered_df_local = filtered_df_local[filtered_df_local["Victim.activity"].isin(selected_activities)]
+    
 
     # 3) NEW: Multi-bin filtering from `selected-bins`
     #    `selected_bins` is a dict like: { "hist_type": "age", "values": [23, 30, 35] }
@@ -743,6 +751,8 @@ def update_filtered_data_store(
             filtered_df_local = filtered_df_local[filtered_df_local["DayOfWeek"].isin(bin_list)]
         elif hist_type == "sitecategory":
             filtered_df_local = filtered_df_local[filtered_df_local["Site.category"].isin(bin_list)]
+        elif hist_type == "activity":
+            filtered_df_local = filtered_df_local[filtered_df_local["Victim.activity"].isin(bin_list)]
     return filtered_df_local.to_dict("records")
 
 @app.callback(
@@ -838,7 +848,8 @@ def update_stacked_bar(filtered_data, colorblind_active):
         barmode="stack",
         color_discrete_sequence=color_discrete_sequence,
         category_orders={"Shark.common.name": sorted_species_list},
-        custom_data = ["Shark.common.name", "Provoked/unprovoked"] 
+        custom_data = ["Shark.common.name", "Provoked/unprovoked"],
+        title="Shark Incidents by Species and Provocation", 
     )
 
 
@@ -1185,6 +1196,10 @@ def update_histogram(filtered_data, treemap_path, histogram_type, colorblind_act
         df_local = df_local.dropna(subset=["Site.category"])
         x_axis = "Site.category"
         title = "Histogram: Site Category"
+    elif histogram_type == "activity":
+        df_local = df_local.dropna(subset=["Victim.activity"])
+        x_axis = "Victim.activity"
+        title = "Histogram: Victim Activity"
     else:
         return px.scatter(title="Invalid Histogram Type")
 
@@ -1241,11 +1256,9 @@ def update_pcp_graph_no_grouping(filtered_data, treemap_path, colorblind_active)
         df_local = df_local[mask]
 
     numeric_cols = [
-        "Shark.length.m",
-        "Depth.of.incident.m",
         "Distance.to.shore.m",
-        "Water.visability.m",
-        "Air.temperature.°C"
+        "Total.water.depth.m",
+        "Time.in.water.min"
     ]
     for c in numeric_cols:
         df_local[c] = pd.to_numeric(df_local[c], errors="coerce")
@@ -1258,11 +1271,9 @@ def update_pcp_graph_no_grouping(filtered_data, treemap_path, colorblind_active)
         df_local,
         dimensions=numeric_cols,
         labels={
-            "Shark.length.m": "Shark Length (m)",
-            "Depth.of.incident.m": "Depth (m)",
             "Distance.to.shore.m": "Shore Dist (m)",
-            "Water.visability.m": "Visibility (m)",
-            "Air.temperature.°C": "Air Temp (°C)"
+            "Total.water.depth.m": "Water Depth (m)",
+            "Time.in.water.min": "Time in water (min)"
         }
     )
 
