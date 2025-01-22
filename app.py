@@ -1182,19 +1182,19 @@ def update_histogram(filtered_data, treemap_path, histogram_type, colorblind_act
     else:
         return px.scatter(title="Invalid Histogram Type")
 
+
+    color_discrete_sequence = get_color_discrete_sequence(colorblind_active)
+
+
     fig = px.histogram(
         df_local,
         x=x_axis,
         category_orders={"DayOfWeek": custom_day_order, "Month": custom_month_order},
         title=title,
-        barnorm = None
+        barnorm = None,
+        color_discrete_sequence=color_discrete_sequence,
     )
 
-    # Choose color palette
-    if colorblind_active:
-        fig.update_traces(marker_color="#3B528B")  # example colorblind-friendly
-    else:
-        fig.update_traces(marker_color="#636EFA")  # Plotly default
 
     fig.update_layout(
         clickmode="event+select",
