@@ -538,6 +538,7 @@ def update_slider_classname(colorblind_active):
         Output("victim-activity-dropdown", "value"),
         Output("state-dropdown", "value"),
         Output("histogram-click-store", "data", allow_duplicate=True),
+        Output("selected-bins", "data", allow_duplicate=True),
     ],
     [
         Input("apply-date-button", "n_clicks"),
@@ -594,6 +595,7 @@ def apply_or_reset(
             dash.no_update,
             dash.no_update,
             dash.no_update,
+            dash.no_update
         )
 
     elif triggered_id == "reset-button":
@@ -611,7 +613,8 @@ def apply_or_reset(
             [],
             [],
             [],
-            None
+            None,
+            {"hist_type": "age", "values": []}  # or whatever initial structure you prefer
         )
 
     raise PreventUpdate
