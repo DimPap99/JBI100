@@ -38,6 +38,9 @@ unique_dates = df["Date"].dropna().unique()
 date_to_index = {date: i for i, date in enumerate(unique_dates)}
 index_to_date = {i: date for i, date in enumerate(unique_dates)}
 
+# Convert site category to title case
+df["Site.category"] = df["Site.category"].str.title()
+
 
 # Convert numeric columns
 df["Shark.length.m"] = pd.to_numeric(df.get("Shark.length.m"), errors="coerce")
