@@ -639,7 +639,9 @@ def handle_bar_click_and_reset(bar_click, reset_clicks):
         return None
 
     if bar_click and "points" in bar_click:
-        return bar_click["points"][0]["customdata"]
+        species_clicked = bar_click["points"][0]["customdata"][0]
+        provoked_clicked = bar_click["points"][0]["customdata"][1]
+        return f"{species_clicked}/{provoked_clicked}"
 
     return dash.no_update
 
@@ -787,7 +789,6 @@ def update_data_on_map_selection(selected_data, current_data):
 )
 def update_stacked_bar(filtered_data, colorblind_active):
     if not filtered_data:
-        # Return an empty figure
         fig = px.bar(title="No Data")
         fig.update_layout(clickmode='event+select')
         return fig
@@ -798,49 +799,48 @@ def update_stacked_bar(filtered_data, colorblind_active):
         fig.update_layout(clickmode='event+select')
         return fig
 
-    # 1) Group by species and provocation only
+    # B) bar_data = one row per (species, provoked)
     bar_data = (
         filtered_df_local
-        .groupby(["Shark.common.name", "Provoked/unprovoked"])
+        .groupby(["Shark.common.name", "Provoked/unprovoked"], as_index=False)
         .size()
-        .reset_index(name="Count")
+        .rename(columns={"size": "Count"})
+    )
+    # Now bar_data columns: [Shark.common.name, Provoked/unprovoked, Count]
+
+    # C) species_totals = sum across provoked => overall count per species
+    species_totals = (
+        bar_data.groupby("Shark.common.name", as_index=False)["Count"]
+        .sum()
         .sort_values("Count", ascending=False)
     )
+    # species_totals columns: [Shark.common.name, Count]
+    # sorted descending so top species is first.
 
-    # # 2) Compute total count *per species* (summing all provocation statuses)
-    # species_totals = (
-    #     bar_data.groupby("Shark.common.name")["Count"]
-    #     .sum()
-    #     .sort_values(ascending=False)  # Sort descending
-    # )
-    # # Convert sorted index to a list
-    # sorted_species_list = species_totals.index.tolist()
+    # D) sorted_species_list for the x-axis
+    sorted_species_list = species_totals["Shark.common.name"].tolist()
 
+    # E) Choose color palette
     color_discrete_sequence = get_color_discrete_sequence(colorblind_active)
 
-    # Build the stacked bar
+    # F) Create the stacked bar
     fig = px.bar(
-    bar_data,
-    x="Shark.common.name",
-    y="Count",
-    color="Provoked/unprovoked",
-    barmode="stack",
-    color_discrete_sequence=color_discrete_sequence,
+        bar_data,
+        x="Shark.common.name",
+        y="Count",
+        color="Provoked/unprovoked",
+        barmode="stack",
+        color_discrete_sequence=color_discrete_sequence,
+        category_orders={"Shark.common.name": sorted_species_list},
+        custom_data = ["Shark.common.name", "Provoked/unprovoked"] 
     )
 
-# Create a combined path so we can store it
-    fig.update_traces(
-        customdata=[
-            f"{row['Shark.common.name']}/{row['Provoked/unprovoked']}"
-            for _, row in bar_data.iterrows()
-        ]
-    )
 
-    # This ensures click events are captured
     fig.update_layout(
-        clickmode='event+select',
+        clickmode='event+select',  # So we get clickData events
         margin={"r": 0, "t": 40, "l": 0, "b": 0},
     )
+
     return fig
 
 
