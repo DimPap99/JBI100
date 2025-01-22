@@ -38,57 +38,46 @@ unique_dates = df["Date"].dropna().unique()
 date_to_index = {date: i for i, date in enumerate(unique_dates)}
 index_to_date = {i: date for i, date in enumerate(unique_dates)}
 
-# Convert numeric columns
-# df["Shark.length.m"] = pd.to_numeric(df.get("Shark.length.m"), errors="coerce")
-# df["Depth.of.incident.m"] = pd.to_numeric(df.get("Depth.of.incident.m"), errors="coerce")
-# df["Distance.to.shore.m"] = pd.to_numeric(df.get("Distance.to.shore.m"), errors="coerce")
-# df["Water.visability.m"] = pd.to_numeric(df.get("Water.visability.m"), errors="coerce")
-# df["Air.temperature.°C"] = pd.to_numeric(df.get("Air.temperature.°C"), errors="coerce")
-
 def categorical_to_numerical(field_name, data):
     custom_mapping = {}
     unique_categories = data[field_name].unique()
-    # dynamic custom mapping
     for idx, category in enumerate(unique_categories):
         custom_mapping[category] = idx + 1
-    # new column's name
     mapped_column = field_name + '.mapped'
     mapped_column = str(mapped_column)
     data[mapped_column] = data[field_name].map(custom_mapping)
     return data
 
 ## Site.category cleaning
-df["Site.category"] = df["Site.category"]. replace(['Coastal','Ocean/pelagic', 'other: fish farm'],
-                                                       ['coastal','ocean/pelagic', 'fish farm'] )
-
-# adding column with mapped site.category
+df["Site.category"] = df["Site.category"].replace(
+    ['Coastal','Ocean/pelagic', 'other: fish farm'],
+    ['coastal','ocean/pelagic', 'fish farm']
+)
 df = categorical_to_numerical('Site.category', df)
 
 ## Injury.severity
-df["Injury.severity"] = df["Injury.severity"]. replace(['other: teeth marks', 'fatality'],
-                                                       ['teeth marks','fatal'] )
-df = categorical_to_numerical('Injury.severity', df)
+df["Injury.severity"] = df["Injury.severity"].replace(
+    ['other: teeth marks', 'fatality'],
+    ['teeth marks','fatal']
+)
+#df = categorical_to_numerical('Injury.severity', df)
 
 df["Distance.to.shore.m"] = pd.to_numeric(df.get("Distance.to.shore.m"), errors="coerce")
-# Victim age
+df["Shark.length.m"] = pd.to_numeric(df.get("Shark.length.m"), errors="coerce")
 df["Victim.age"] = pd.to_numeric(df.get("Victim.age"), errors="coerce")
 
-# Custom month and day order for dropdown
 custom_month_order = [
     "January", "February", "March", "April", "May", "June",
     "July", "August", "September", "October", "November", "December"
 ]
-
 custom_day_order = [
     "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"
 ]
 
-# State filter
 state_options = [
     {"label": st, "value": st}
     for st in sorted(df["State"].dropna().unique())
 ]
-# Build the list of dropdown options
 species_options = [
     {"label": s, "value": s}
     for s in df["Shark.common.name"].dropna().unique()
@@ -158,7 +147,6 @@ app.layout = html.Div([
                         children=[
                             html.H2("DASH - SHARK INCIDENT DATA"),
 
-                            # Date Range (RangeSlider + inputs)
                             html.P("Select a date range to filter incidents."),
                             html.Div([
                                 html.Label("Start Date:"),
@@ -189,11 +177,11 @@ app.layout = html.Div([
                                     n_clicks=0,
                                     style={"marginLeft": "10px"}
                                 ),
-                                # Info Modal Button
                                 html.Button("Help",
-                                id="help-button",
-                                n_clicks=0,
-                                style={"marginLeft": "10px"}),
+                                    id="help-button",
+                                    n_clicks=0,
+                                    style={"marginLeft": "10px"}
+                                ),
                             ], style={"marginBottom": "15px", "display": "flex", "alignItems": "center"}),
 
                             dcc.RangeSlider(
@@ -245,7 +233,6 @@ app.layout = html.Div([
                                 multi=True
                             ),
 
-                            # Third Chart Below the Filters -- Make histogram clickable
                             html.Div(
                                 style={
                                     "marginTop": "20px",
@@ -255,8 +242,6 @@ app.layout = html.Div([
                                 },
                                 children=[
                                     html.H4("Histogram", style={"paddingLeft": "12px"}),
-
-                                    # Toggle Component for Histogram Type
                                     dcc.RadioItems(
                                         id="histogram-type",
                                         options=[
@@ -265,16 +250,14 @@ app.layout = html.Div([
                                             {"label": "Month", "value": "month"},
                                             {"label": "Day of Week", "value": "dayofweek"}
                                         ],
-                                        value="age",  # Default to Victim Age
+                                        value="age",
                                         inline=True,
                                         style={"marginBottom": "15px"}
                                     ),
-
-                                    # Histogram Graph
                                     dcc.Graph(
                                         id="third-chart",
                                         style={"height": "85%", "width": "100%"},
-                                        config={"displayModeBar": False},  # Optional
+                                        config={"displayModeBar": False},
                                     )
                                 ]
                             ),
@@ -292,7 +275,6 @@ app.layout = html.Div([
                             "overflowY": "auto",
                         },
                         children=[
-                            # Map: ~ top 50%
                             html.Div(
                                 style={"flex": "0 0 50%", "marginBottom": "10px"},
                                 children=[
@@ -303,7 +285,6 @@ app.layout = html.Div([
                                     )
                                 ]
                             ),
-                            # Treemap + PCP side by side
                             html.Div(
                                 style={
                                     "flex": "0 0 50%",
@@ -336,7 +317,20 @@ app.layout = html.Div([
                                                     "height": "85%",
                                                     "width": "100%"
                                                 }
-                                            )
+                                            ),
+                                            # (1) NEW DIV for the mini-label
+                                            html.Div(
+                                                id="mapping-info",
+                                                style={
+                                                    "marginTop": "10px",
+                                                    "fontSize": "12px",
+                                                    "whiteSpace": "pre-wrap",
+                                                    "backgroundColor": "#f9f9f9",
+                                                    "padding": "5px",
+                                                    "borderRadius": "4px",
+                                                    "border": "1px solid #ccc",
+                                                }
+                                            ),
                                         ]
                                     ),
                                 ]
@@ -348,16 +342,11 @@ app.layout = html.Div([
         ],
     ),
 
-    # --------------------------------------------------------------------------
-    # Stores
-    # --------------------------------------------------------------------------
     dcc.Store(id="selected-incidents-store", data={"rows": [], "current_index": 0}),
     dcc.Store(id="filtered-data-store"),
     dcc.Store(id="pie-selected-species", data=None),
-    # (1) NEW STORE FOR HISTOGRAM CLICK SELECTED AGE:
     dcc.Store(id="histogram-click-store", data=None),
 
-    # Modal
     html.Div(
         id="info-modal",
         style={
@@ -395,41 +384,40 @@ app.layout = html.Div([
             html.Div(id="modal-incident-content"),
         ],
     ),
-    # Add a help modal
     html.Div(
-    id="help-modal",
-    style={
-        "display": "none",
-        "position": "fixed",
-        "top": "20%",
-        "left": "30%",
-        "width": "40%",
-        "height": "auto",
-        "backgroundColor": "white",
-        "boxShadow": "0px 0px 10px rgba(0, 0, 0, 0.5)",
-        "zIndex": 1000,
-        "padding": "20px",
-        "borderRadius": "10px",
-        "color": "black",
-    },
-    children=[
-        html.Button(
-            "Close",
-            id="close-help-modal",
-            style={"float": "right", "margin": "10px"}
-        ),
-        html.Div(
-            children=[
-                html.H4("How to Use This Tool"),
-                html.P(
-                    "This dashboard provides an interactive interface for exploring "
-                    "shark incident data in Australia. Use the filters on the left to "
-                    "narrow down the data by date range, species, location, and more. "
-                    "Click on elements in the charts to focus on specific subsets of the data."
-                ),
-                html.P(
-                    "For example, click on a bar in the histogram to filter incidents by victim age. "
-                    "Use the map to explore incidents geographically and see details by clicking on a point."
+        id="help-modal",
+        style={
+            "display": "none",
+            "position": "fixed",
+            "top": "20%",
+            "left": "30%",
+            "width": "40%",
+            "height": "auto",
+            "backgroundColor": "white",
+            "boxShadow": "0px 0px 10px rgba(0, 0, 0, 0.5)",
+            "zIndex": 1000,
+            "padding": "20px",
+            "borderRadius": "10px",
+            "color": "black",
+        },
+        children=[
+            html.Button(
+                "Close",
+                id="close-help-modal",
+                style={"float": "right", "margin": "10px"}
+            ),
+            html.Div(
+                children=[
+                    html.H4("How to Use This Tool"),
+                    html.P(
+                        "This dashboard provides an interactive interface for exploring "
+                        "shark incident data in Australia. Use the filters on the left to "
+                        "narrow down the data by date range, species, location, and more. "
+                        "Click on elements in the charts to focus on specific subsets of the data."
+                    ),
+                    html.P(
+                        "For example, click on a bar in the histogram to filter incidents by victim age. "
+                        "Use the map to explore incidents geographically and see details by clicking on a point."
                     ),
                 ],
                 style={"color": "black"},
@@ -453,7 +441,6 @@ app.layout = html.Div([
         Output("dayofweek-dropdown", "value"),
         Output("victim-activity-dropdown", "value"),
         Output("state-dropdown", "value"),
-        # ALSO reset histogram-age selection on reset:
         Output("histogram-click-store", "data", allow_duplicate=True),
     ],
     [
@@ -478,7 +465,6 @@ def apply_or_reset(
     triggered_id = ctx.triggered[0]["prop_id"].split(".")[0]
 
     if triggered_id == "apply-date-button":
-        # "Apply" => sync date inputs & slider.
         try:
             start_idx = date_to_index[pd.to_datetime(current_start_date)]
         except Exception:
@@ -491,11 +477,8 @@ def apply_or_reset(
             end_idx = current_slider[1]
             current_end_date = index_to_date[end_idx].strftime("%Y-%m-%d")
 
-        # Ensure in bounds
         start_idx = max(0, min(start_idx, len(unique_dates) - 1))
         end_idx = max(0, min(end_idx, len(unique_dates) - 1))
-
-        # If reversed, swap
         if start_idx > end_idx:
             start_idx, end_idx = end_idx, start_idx
 
@@ -507,17 +490,16 @@ def apply_or_reset(
             new_start_date,
             new_end_date,
             new_slider,
-            dash.no_update,  # keep species
-            dash.no_update,  # keep map selection
-            dash.no_update,  # keep month
-            dash.no_update,  # keep dayofweek
-            dash.no_update,  # keep victim activity
-            dash.no_update,  # keep state as is
-            dash.no_update,  # keep histogram selection as is
+            dash.no_update,
+            dash.no_update,
+            dash.no_update,
+            dash.no_update,
+            dash.no_update,
+            dash.no_update,
+            dash.no_update,
         )
 
     elif triggered_id == "reset-button":
-        # "Reset" => revert everything to default
         default_start = str(unique_dates[0].date())
         default_end = str(unique_dates[-1].date())
         default_slider_range = [0, len(unique_dates) - 1]
@@ -527,7 +509,6 @@ def apply_or_reset(
         default_dow = []
         default_victim_activity = []
         default_state = []
-        # Clear the histogram selection:
         default_hist_age = None
 
         return (
@@ -568,7 +549,6 @@ def handle_treemap_click_and_reset(treemap_click, reset_clicks):
         if treemap_click and "points" in treemap_click:
             points = treemap_click["points"]
             if points:
-                # The "id" should hold the entire path, e.g. "Bull shark/lacerations/unprovoked"
                 return points[0].get("id")
         return dash.no_update
 
@@ -591,10 +571,6 @@ def handle_treemap_click_and_reset(treemap_click, reset_clicks):
     prevent_initial_call=True
 )
 def handle_histogram_click(click_data, reset_clicks, histogram_type):
-    """
-    Capture the clicked value from the histogram.
-    Reset when the reset button is clicked.
-    """
     ctx = dash.callback_context
     if not ctx.triggered:
         raise PreventUpdate
@@ -602,19 +578,17 @@ def handle_histogram_click(click_data, reset_clicks, histogram_type):
     triggered_id = ctx.triggered[0]["prop_id"].split(".")[0]
 
     if triggered_id == "third-chart" and click_data:
-        # Get the clicked value (Victim Age or Day of Week)
         clicked_value = click_data["points"][0].get("x")
         return {"type": histogram_type, "value": clicked_value}
 
     elif triggered_id == "reset-button":
-        # Clear the selected histogram value on reset
         return None
 
     raise PreventUpdate
 
 
 # ------------------------------------------------------------------------------
-# 3) “Master” Filtering Callback (including NEW State filter & histogram click)
+# 3) “Master” Filtering Callback
 # ------------------------------------------------------------------------------
 @app.callback(
     Output("filtered-data-store", "data"),
@@ -626,7 +600,7 @@ def handle_histogram_click(click_data, reset_clicks, histogram_type):
         Input("month-dropdown", "value"),
         Input("dayofweek-dropdown", "value"),
         Input("victim-activity-dropdown", "value"),
-        Input("histogram-click-store", "data"),  # NEW input for histogram age
+        Input("histogram-click-store", "data"),
     ]
 )
 def update_filtered_data_store(
@@ -636,7 +610,6 @@ def update_filtered_data_store(
 ):
     filtered_df_local = df.copy()
 
-    # 1) Date range
     if slider_range:
         start_date = index_to_date[slider_range[0]]
         end_date = index_to_date[slider_range[1]]
@@ -645,7 +618,6 @@ def update_filtered_data_store(
             (filtered_df_local["Date"] <= end_date)
         ]
 
-    # 2) State
     if histogram_click_data and histogram_click_data["type"] == "state":
         filtered_df_local = filtered_df_local[
             filtered_df_local["State"] == histogram_click_data["value"]
@@ -655,13 +627,11 @@ def update_filtered_data_store(
             filtered_df_local["State"].isin(selected_states)
         ]
 
-    # 3) Species
     if selected_species:
         filtered_df_local = filtered_df_local[
             filtered_df_local["Shark.common.name"].isin(selected_species)
         ]
 
-    # 4) Month
     if histogram_click_data and histogram_click_data["type"] == "month":
         filtered_df_local = filtered_df_local[
             filtered_df_local["Month"] == histogram_click_data["value"]
@@ -671,7 +641,6 @@ def update_filtered_data_store(
             filtered_df_local["Month"].isin(selected_months)
         ]
 
-    # 5) Day-of-week
     if histogram_click_data and histogram_click_data["type"] == "dayofweek":
         filtered_df_local = filtered_df_local[
             filtered_df_local["DayOfWeek"] == histogram_click_data["value"]
@@ -681,13 +650,11 @@ def update_filtered_data_store(
             filtered_df_local["DayOfWeek"].isin(selected_dows)
         ]
 
-    # 6) Victim Activity
     if selected_activities:
         filtered_df_local = filtered_df_local[
             filtered_df_local["Victim.activity"].isin(selected_activities)
         ]
 
-    # 7) Victim Age
     if histogram_click_data and histogram_click_data["type"] == "age":
         filtered_df_local = filtered_df_local[
             filtered_df_local["Victim.age"] == histogram_click_data["value"]
@@ -699,22 +666,79 @@ def update_filtered_data_store(
 # ------------------------------------------------------------------------------
 # 4) Build Treemap from filtered data
 # ------------------------------------------------------------------------------
+# @app.callback(
+#     Output("pie-chart", "figure"),
+#     Input("filtered-data-store", "data")
+# )
+# def update_treemap_from_filtered_data(filtered_data):
+#     if not filtered_data:
+#         empty_df = pd.DataFrame({
+# #            "Shark.common.name": [],
+#             "Site.category": [],
+#             "Victim.injury": [],
+#             "Provoked/unprovoked": [],
+#             "Count": []
+#         })
+#         fig = px.treemap(
+#             empty_df,
+#             path=["Shark.common.name", "Victim.injury", "Provoked/unprovoked"],
+#             values="Count",
+#             title="No Data"
+#         )
+#         fig.update_layout(clickmode='event+select')
+#         return fig
+
+#     filtered_df_local = pd.DataFrame(filtered_data)
+#     if filtered_df_local.empty:
+#         empty_df = pd.DataFrame({
+#             "Shark.common.name": [],
+#             "Victim.injury": [],
+#             "Provoked/unprovoked": [],
+#             "Count": []
+#         })
+#         fig = px.treemap(
+#             empty_df,
+#             path=["Shark.common.name", "Victim.injury", "Provoked/unprovoked"],
+#             values="Count",
+#             title="No Data"
+#         )
+#         fig.update_layout(clickmode='event+select')
+#         return fig
+
+#     tree_data = (
+#         filtered_df_local
+#         .groupby(["Shark.common.name", "Victim.injury", "Provoked/unprovoked"])
+#         .size()
+#         .reset_index(name="Count")
+#     )
+
+#     fig = px.treemap(
+#         tree_data,
+#         path=["Shark.common.name", "Victim.injury", "Provoked/unprovoked"],
+#         values="Count",
+#         title="Shark Incidents Treemap (Species -> Injury -> Provoked)"
+#     )
+#     fig.update_layout(clickmode='event+select')
+#     return fig
+
 @app.callback(
     Output("pie-chart", "figure"),
     Input("filtered-data-store", "data")
 )
 def update_treemap_from_filtered_data(filtered_data):
+   
     if not filtered_data:
         empty_df = pd.DataFrame({
             "Shark.common.name": [],
-            "Victim.injury": [],
+            "Site.category": [],
+            "Injury.severity": [],
             "Provoked/unprovoked": [],
             "Count": []
         })
-        fig = px.treemap(
+        fig = px.bar(
             empty_df,
-            path=["Shark.common.name", "Victim.injury", "Provoked/unprovoked"],
-            values="Count",
+            x="Shark.common.name",
+            y="Count",
             title="No Data"
         )
         fig.update_layout(clickmode='event+select')
@@ -724,40 +748,50 @@ def update_treemap_from_filtered_data(filtered_data):
     if filtered_df_local.empty:
         empty_df = pd.DataFrame({
             "Shark.common.name": [],
-            "Victim.injury": [],
+            "Site.category": [],
+            "Injury.severity": [],
             "Provoked/unprovoked": [],
             "Count": []
         })
-        fig = px.treemap(
+        fig = px.bar(
             empty_df,
-            path=["Shark.common.name", "Victim.injury", "Provoked/unprovoked"],
-            values="Count",
+            x="Shark.common.name",
+            y="Count",
             title="No Data"
         )
         fig.update_layout(clickmode='event+select')
         return fig
-
-    # Group by 3 levels
-    tree_data = (
+    
+    bar_data = (
         filtered_df_local
-        .groupby(["Shark.common.name", "Victim.injury", "Provoked/unprovoked"])
+        .groupby(["Shark.common.name", "Site.category", "Injury.severity", "Provoked/unprovoked"])
         .size()
         .reset_index(name="Count")
     )
 
-    fig = px.treemap(
-        tree_data,
-        path=["Shark.common.name", "Victim.injury", "Provoked/unprovoked"],
-        values="Count",
-        title="Shark Incidents Treemap (Species -> Injury -> Provoked)"
+    # Assign colour to each column
+    bar_data["StackLabel"] = (
+        bar_data["Site.category"] + " / " +
+        bar_data["Injury.severity"] + " / " +
+        bar_data["Provoked/unprovoked"]
     )
-    # Make treemap clickable
-    fig.update_layout(clickmode='event+select')
+
+    # Stacked bar chart
+    fig = px.bar(
+        bar_data,
+        x="Shark.common.name",
+        y="Count",
+        color="StackLabel",
+        barmode="stack",
+        title="Shark Incidents (Stacked Bar Chart: Species vs. Site/Injury/Provoked)"
+    )
+    fig.update_layout(clickmode='event+select') # Interactive bar chart
+
     return fig
 
 
 # ------------------------------------------------------------------------------
-# 5) Update Map to highlight the treemap-clicked path
+# 5) Update Map
 # ------------------------------------------------------------------------------
 @app.callback(
     Output("map-graph", "figure"),
@@ -878,11 +912,9 @@ def handle_modal_and_incidents(
     prev_style = {"marginRight": "20px", "padding": "8px 16px"}
     next_style = {"padding": "8px 16px"}
 
-    # If user closed
     if "close-modal" in triggered_id:
         return default_style, default_store, default_content, prev_style, next_style, no_blur
 
-    # Filter by slider
     if slider_range:
         start_date = index_to_date[slider_range[0]]
         end_date = index_to_date[slider_range[1]]
@@ -890,11 +922,9 @@ def handle_modal_and_incidents(
     else:
         filter_df = df.copy()
 
-    # Filter by species
     if selectedSpecies:
         filter_df = filter_df[filter_df["Shark.common.name"].isin(selectedSpecies)]
 
-    # If map clicked => open modal
     if "map-graph.clickData" in triggered_id and clickData:
         lat_clicked = round(clickData["points"][0]["lat"], 5)
         lon_clicked = round(clickData["points"][0]["lon"], 5)
@@ -939,7 +969,6 @@ def handle_modal_and_incidents(
         }
         return modal_style, new_store, content, prev_style, next_style, blurred
 
-    # If Prev/Next
     rows = store_data.get("rows", [])
     current_idx = store_data.get("current_index", 0)
     if not rows:
@@ -971,9 +1000,6 @@ def handle_modal_and_incidents(
     return modal_style, updated_store, content, prev_style, next_style, blurred
 
 
-# ------------------------------------------------------------------------------
-# Helpers for Modal
-# ------------------------------------------------------------------------------
 def build_modal_content(rows, idx):
     if not rows or idx < 0 or idx >= len(rows):
         return html.Div("No incident data available")
@@ -1033,14 +1059,14 @@ def get_nav_button_styles(num_rows, current_idx, prev_style, next_style):
 
 
 # ------------------------------------------------------------------------------
-# 7) Third Chart: Histogram by Victim Age (clickable)
+# 7) Third Chart: Histogram
 # ------------------------------------------------------------------------------
 @app.callback(
     Output("third-chart", "figure"),
     [
         Input("filtered-data-store", "data"),
         Input("pie-selected-species", "data"),
-        Input("histogram-type", "value"),  # New input for histogram type
+        Input("histogram-type", "value"),
     ]
 )
 def update_histogram(filtered_data, treemap_path, histogram_type):
@@ -1051,7 +1077,6 @@ def update_histogram(filtered_data, treemap_path, histogram_type):
     if df_local.empty:
         return px.scatter(title="No Data in Histogram")
 
-    # Subfilter by treemap path
     if treemap_path:
         path_parts = treemap_path.split("/")
         species_sel = path_parts[0] if len(path_parts) >= 1 else None
@@ -1067,7 +1092,6 @@ def update_histogram(filtered_data, treemap_path, histogram_type):
             mask &= (df_local["Provoked/unprovoked"] == provoked_sel)
         df_local = df_local[mask]
 
-    # Generate the histogram based on the selected type
     if histogram_type == "age":
         df_local["Victim.age"] = pd.to_numeric(df_local["Victim.age"], errors="coerce")
         df_local = df_local.dropna(subset=["Victim.age"])
@@ -1102,7 +1126,7 @@ def update_histogram(filtered_data, treemap_path, histogram_type):
 
 
 # ------------------------------------------------------------------------------
-# 8) PCP (Unchanged except for subfiltering by treemap)
+# 8) PCP
 # ------------------------------------------------------------------------------
 @app.callback(
     Output("pcp-graph", "figure"),
@@ -1111,69 +1135,14 @@ def update_histogram(filtered_data, treemap_path, histogram_type):
         Input("pie-selected-species", "data")
     ]
 )
-# def update_pcp_graph_no_grouping(filtered_data, treemap_path):
-#     if not filtered_data:
-#         return px.scatter(title="No Data in PCP")
-
-#     df_local = pd.DataFrame(filtered_data)
-#     if df_local.empty:
-#         return px.scatter(title="No Data in PCP")
-
-#     # Subfilter by treemap path
-#     if treemap_path:
-#         path_parts = treemap_path.split("/")
-#         species_sel = path_parts[0] if len(path_parts) >= 1 else None
-#         injury_sel = path_parts[1] if len(path_parts) >= 2 else None
-#         provoked_sel = path_parts[2] if len(path_parts) >= 3 else None
-
-#         mask = pd.Series([True]*len(df_local))
-#         if species_sel:
-#             mask &= (df_local["Shark.common.name"] == species_sel)
-#         if injury_sel:
-#             mask &= (df_local["Victim.injury"] == injury_sel)
-#         if provoked_sel:
-#             mask &= (df_local["Provoked/unprovoked"] == provoked_sel)
-#         df_local = df_local[mask]
-
-#     numeric_cols = [
-#         "Shark.length.m",
-#         "Depth.of.incident.m",
-#         "Distance.to.shore.m",
-#         "Water.visability.m",
-#         "Air.temperature.°C"
-#     ]
-#     for c in numeric_cols:
-#         df_local[c] = pd.to_numeric(df_local[c], errors="coerce")
-
-#     df_local = df_local.dropna(subset=numeric_cols)
-#     if df_local.empty:
-#         return px.scatter(title="No Data for PCP")
-
-#     fig = px.parallel_coordinates(
-#         df_local,
-#         dimensions=numeric_cols,
-#         labels={
-#             "Shark.length.m": "Shark Length (m)",
-#             "Depth.of.incident.m": "Depth (m)",
-#             "Distance.to.shore.m": "Shore Dist (m)",
-#             "Water.visability.m": "Visibility (m)",
-#             "Air.temperature.°C": "Air Temp (°C)"
-#         }
-#     )
-#     fig.update_traces(line_color="blue")
-#     fig.update_layout(title="")
-#     return fig
-
-# New Attempt
 def update_pcp_graph_no_grouping(filtered_data, treemap_path):
     if not filtered_data:
         return px.scatter(title="No Data in PCP")
-    
+
     df_local = pd.DataFrame(filtered_data)
     if df_local.empty:
         return px.scatter(title="No Data in PCP")
 
-    # Subfilter by treemap path
     if treemap_path:
         path_parts = treemap_path.split("/")
         species_sel = path_parts[0] if len(path_parts) >= 1 else None
@@ -1190,6 +1159,7 @@ def update_pcp_graph_no_grouping(filtered_data, treemap_path):
         df_local = df_local[mask]
 
     numeric_cols = [
+        "Shark.length.m",
         "Site.category.mapped",
         "Injury.severity.mapped",
         "Distance.to.shore.m"
@@ -1206,13 +1176,88 @@ def update_pcp_graph_no_grouping(filtered_data, treemap_path):
         dimensions=numeric_cols,
         labels={
             "Site.category.mapped": "Site ",
-            "Injury.severity.mapped": "Type pf injury",
+            "Total.water.depth.m": "Depth (m)",
             "Distance.to.shore.m": "Shore Dist (m)"
         }
     )
     fig.update_traces(line_color="blue")
     fig.update_layout(title="")
     return fig
+
+
+# # ------------------------------------------------------------------------------
+# # (NEW) Show numeric-to-categorical mapping for Site/Injury
+# # ------------------------------------------------------------------------------
+# @app.callback(
+#     Output("mapping-info", "children"),
+#     [
+#         Input("filtered-data-store", "data"),
+#         Input("pie-selected-species", "data"),
+#     ]
+# )
+# def display_mapped_legend(filtered_data, treemap_path):
+#     """
+#     Prints a mini label showing how numeric columns
+#     'Site.category.mapped' and 'Injury.severity.mapped'
+#     correspond to their original text values.
+#     """
+#     if not filtered_data:
+#         return "No data available for mapping legend."
+
+#     df_local = pd.DataFrame(filtered_data)
+#     if df_local.empty:
+#         return "No data available for mapping legend."
+
+#     # Match the same subfilter logic as the PCP callback:
+#     if treemap_path:
+#         path_parts = treemap_path.split("/")
+#         species_sel = path_parts[0] if len(path_parts) >= 1 else None
+#         injury_sel = path_parts[1] if len(path_parts) >= 2 else None
+#         provoked_sel = path_parts[2] if len(path_parts) >= 3 else None
+
+#         mask = pd.Series([True]*len(df_local))
+#         if species_sel:
+#             mask &= (df_local["Shark.common.name"] == species_sel)
+#         if injury_sel:
+#             mask &= (df_local["Victim.injury"] == injury_sel)
+#         if provoked_sel:
+#             mask &= (df_local["Provoked/unprovoked"] == provoked_sel)
+#         df_local = df_local[mask]
+
+#     # Gather unique numeric->text pairs for site
+#     site_pairs = (
+#         df_local[["Site.category.mapped", "Site.category"]]
+#         .dropna().drop_duplicates()
+#         .sort_values("Site.category.mapped")
+#     )
+#     site_lines = [
+#         f"{int(row['Site.category.mapped'])} => {row['Site.category']}"
+#         for _, row in site_pairs.iterrows()
+#     ]
+
+#     # Gather unique numeric->text pairs for injury
+#     inj_pairs = (
+#         df_local[["Injury.severity.mapped", "Injury.severity"]]
+#         .dropna().drop_duplicates()
+#         .sort_values("Injury.severity.mapped")
+#     )
+#     inj_lines = [
+#         f"{int(row['Injury.severity.mapped'])} => {row['Injury.severity']}"
+#         for _, row in inj_pairs.iterrows()
+#     ]
+
+#     if not site_lines and not inj_lines:
+#         return "No mapped categories in this subset."
+
+#     text_output = []
+#     if site_lines:
+#         text_output.append("Site.category.mapped:\n" + "\n".join(site_lines) + "\n")
+#     if inj_lines:
+#         text_output.append("Injury.severity.mapped:\n" + "\n".join(inj_lines) + "\n")
+
+#     return "\n".join(text_output)
+
+
 # ------------------------------------------------------------------------------
 # 9) Help Modal
 # ------------------------------------------------------------------------------
@@ -1232,7 +1277,6 @@ def toggle_help_modal(help_clicks, close_help_clicks):
     if not ctx.triggered:
         raise PreventUpdate
     triggered_id = ctx.triggered[0]["prop_id"].split(".")[0]
-    # Show modal when the Help button is clicked
     if triggered_id == "help-button":
         return (
             {
@@ -1250,12 +1294,10 @@ def toggle_help_modal(help_clicks, close_help_clicks):
             },
             "blurred",
         )
-    # Hide modal when the Close button is clicked
     if triggered_id == "close-help-modal":
         return {"display": "none"}, ""
     raise PreventUpdate
 
-# ------------------------------------------------------------------------------
 
 # ------------------------------------------------------------------------------
 # Run
