@@ -804,16 +804,17 @@ def update_stacked_bar(filtered_data, colorblind_active):
         .groupby(["Shark.common.name", "Provoked/unprovoked"])
         .size()
         .reset_index(name="Count")
+        .sort_values("Count", ascending=False)
     )
 
-    # 2) Compute total count *per species* (summing all provocation statuses)
-    species_totals = (
-        bar_data.groupby("Shark.common.name")["Count"]
-        .sum()
-        .sort_values(ascending=False)  # Sort descending
-    )
-    # Convert sorted index to a list
-    sorted_species_list = species_totals.index.tolist()
+    # # 2) Compute total count *per species* (summing all provocation statuses)
+    # species_totals = (
+    #     bar_data.groupby("Shark.common.name")["Count"]
+    #     .sum()
+    #     .sort_values(ascending=False)  # Sort descending
+    # )
+    # # Convert sorted index to a list
+    # sorted_species_list = species_totals.index.tolist()
 
     color_discrete_sequence = get_color_discrete_sequence(colorblind_active)
 
@@ -825,7 +826,6 @@ def update_stacked_bar(filtered_data, colorblind_active):
     color="Provoked/unprovoked",
     barmode="stack",
     color_discrete_sequence=color_discrete_sequence,
-    category_orders={"Shark.common.name": sorted_species_list},
     )
 
 # Create a combined path so we can store it
