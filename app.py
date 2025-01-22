@@ -60,10 +60,13 @@ df["Injury.severity"] = df["Injury.severity"].replace(
     ['other: teeth marks', 'fatality'],
     ['teeth marks','fatal']
 )
-#df = categorical_to_numerical('Injury.severity', df)
 
+## Final PCP data
 df["Distance.to.shore.m"] = pd.to_numeric(df.get("Distance.to.shore.m"), errors="coerce")
-df["Shark.length.m"] = pd.to_numeric(df.get("Shark.length.m"), errors="coerce")
+df["Total.water.depth.m"] = pd.to_numeric(df.get("Total.water.depth.m"), errors="coerce")
+df["Time.in.water.min"] = pd.to_numeric(df.get("Time.in.water.min"), errors="coerce")
+df["Depth.of.incident.m"] = pd.to_numeric(df.get("Depth.of.incident.m"), errors="coerce")
+
 df["Victim.age"] = pd.to_numeric(df.get("Victim.age"), errors="coerce")
 
 custom_month_order = [
@@ -310,27 +313,50 @@ app.layout = html.Div([
                                     html.Div(
                                         style={"flex": "1", "marginLeft": "5px"},
                                         children=[
-                                            html.H4("Parallel Coordinates Plot", style={"paddingLeft": "12px"}),
+                                            # Put the title + button in a small row container:
+                                            html.Div(
+                                                style={"display": "flex", "alignItems": "center"},
+                                                children=[
+                                                    html.H4("Parallel Coordinates Plot", style={"paddingLeft": "12px", "marginRight": "10px"}),
+                                                    # html.Button(
+                                                    #     "Show Mapping",
+                                                    #     id="show-mapping-button",
+                                                    #     n_clicks=0,
+                                                    #     style={"padding": "5px 10px"}
+                                                    # ),
+                                                ],
+                                            ),
+
+                                            # The PCP graph as before
                                             dcc.Graph(
                                                 id="pcp-graph",
-                                                style={
-                                                    "height": "85%",
-                                                    "width": "100%"
-                                                }
+                                                style={"height": "85%", "width": "100%"}
                                             ),
-                                            # (1) NEW DIV for the mini-label
-                                            html.Div(
-                                                id="mapping-info",
-                                                style={
-                                                    "marginTop": "10px",
-                                                    "fontSize": "12px",
-                                                    "whiteSpace": "pre-wrap",
-                                                    "backgroundColor": "#f9f9f9",
-                                                    "padding": "5px",
-                                                    "borderRadius": "4px",
-                                                    "border": "1px solid #ccc",
-                                                }
-                                            ),
+                                            
+                                            ## Mapping infomation
+                                            # html.Div(
+                                            #     id="mapping-info",
+                                            #     style={
+                                            #         "display": "none",
+                                            #         "position": "fixed",
+                                            #         "top": "20%",
+                                            #         "left": "30%",
+                                            #         "width": "40%",
+                                            #         "height": "auto",
+                                            #         "backgroundColor": "white",
+                                            #         "boxShadow": "0px 0px 10px rgba(0, 0, 0, 0.5)",
+                                            #         "zIndex": 1000,
+                                            #         "padding": "20px",
+                                            #         "borderRadius": "10px"},
+                                            #         children=[
+                                            #             html.Button("Close", id="close-modal", style={"float": "right", "margin": "10px"}),
+                                            #             html.Div(
+                                            #             children=[
+                                            #             ],
+                                            #             style={"color": "black"},
+                                            #         ),
+                                            #     ],
+                                            # ),
                                         ]
                                     ),
                                 ]
@@ -664,82 +690,25 @@ def update_filtered_data_store(
 
 
 # ------------------------------------------------------------------------------
-# 4) Build Treemap from filtered data
+# 4) Build Treemap (here replaced by Stacked Bar) from filtered data
 # ------------------------------------------------------------------------------
-# @app.callback(
-#     Output("pie-chart", "figure"),
-#     Input("filtered-data-store", "data")
-# )
-# def update_treemap_from_filtered_data(filtered_data):
-#     if not filtered_data:
-#         empty_df = pd.DataFrame({
-# #            "Shark.common.name": [],
-#             "Site.category": [],
-#             "Victim.injury": [],
-#             "Provoked/unprovoked": [],
-#             "Count": []
-#         })
-#         fig = px.treemap(
-#             empty_df,
-#             path=["Shark.common.name", "Victim.injury", "Provoked/unprovoked"],
-#             values="Count",
-#             title="No Data"
-#         )
-#         fig.update_layout(clickmode='event+select')
-#         return fig
-
-#     filtered_df_local = pd.DataFrame(filtered_data)
-#     if filtered_df_local.empty:
-#         empty_df = pd.DataFrame({
-#             "Shark.common.name": [],
-#             "Victim.injury": [],
-#             "Provoked/unprovoked": [],
-#             "Count": []
-#         })
-#         fig = px.treemap(
-#             empty_df,
-#             path=["Shark.common.name", "Victim.injury", "Provoked/unprovoked"],
-#             values="Count",
-#             title="No Data"
-#         )
-#         fig.update_layout(clickmode='event+select')
-#         return fig
-
-#     tree_data = (
-#         filtered_df_local
-#         .groupby(["Shark.common.name", "Victim.injury", "Provoked/unprovoked"])
-#         .size()
-#         .reset_index(name="Count")
-#     )
-
-#     fig = px.treemap(
-#         tree_data,
-#         path=["Shark.common.name", "Victim.injury", "Provoked/unprovoked"],
-#         values="Count",
-#         title="Shark Incidents Treemap (Species -> Injury -> Provoked)"
-#     )
-#     fig.update_layout(clickmode='event+select')
-#     return fig
-
 @app.callback(
     Output("pie-chart", "figure"),
     Input("filtered-data-store", "data")
 )
 def update_treemap_from_filtered_data(filtered_data):
-   
     if not filtered_data:
         empty_df = pd.DataFrame({
             "Shark.common.name": [],
             "Site.category": [],
-            "Injury.severity": [],
-            "Provoked/unprovoked": [],
             "Count": []
         })
         fig = px.bar(
             empty_df,
             x="Shark.common.name",
             y="Count",
-            title="No Data"
+            title="No Data",
+            template="none",
         )
         fig.update_layout(clickmode='event+select')
         return fig
@@ -749,46 +718,40 @@ def update_treemap_from_filtered_data(filtered_data):
         empty_df = pd.DataFrame({
             "Shark.common.name": [],
             "Site.category": [],
-            "Injury.severity": [],
-            "Provoked/unprovoked": [],
             "Count": []
         })
         fig = px.bar(
             empty_df,
             x="Shark.common.name",
             y="Count",
-            title="No Data"
+            title="No Data",
+            template="none",
         )
         fig.update_layout(clickmode='event+select')
         return fig
     
     bar_data = (
         filtered_df_local
-        .groupby(["Shark.common.name", "Site.category", "Injury.severity", "Provoked/unprovoked"])
+        .groupby(["Shark.common.name", "Site.category"])
         .size()
         .reset_index(name="Count")
     )
 
-    # Assign colour to each column
     bar_data["StackLabel"] = (
-        bar_data["Site.category"] + " / " +
-        bar_data["Injury.severity"] + " / " +
-        bar_data["Provoked/unprovoked"]
+        bar_data["Site.category"]
     )
 
-    # Stacked bar chart
     fig = px.bar(
         bar_data,
         x="Shark.common.name",
         y="Count",
         color="StackLabel",
         barmode="stack",
-        title="Shark Incidents (Stacked Bar Chart: Species vs. Site/Injury/Provoked)"
+        title="Shark Incidents (Stacked Bar Chart: Species vs. Site)",
+        template="none"  
     )
-    fig.update_layout(clickmode='event+select') # Interactive bar chart
-
+    fig.update_layout(clickmode='event+select')
     return fig
-
 
 # ------------------------------------------------------------------------------
 # 5) Update Map
@@ -822,19 +785,15 @@ def update_map_from_filtered_data_and_treemap_path(filtered_data, treemap_path):
 
     df_local["Highlight"] = "Other"
     if treemap_path:
+        # For stacked bar path: "Species / Site / Provoked"
         path_parts = treemap_path.split("/")
         species_sel = path_parts[0] if len(path_parts) >= 1 else None
-        injury_sel = path_parts[1] if len(path_parts) >= 2 else None
-        provoked_sel = path_parts[2] if len(path_parts) >= 3 else None
+        # site_sel = path_parts[1] if len(path_parts) >= 2 else None
+        # provoked_sel = path_parts[2] if len(path_parts) >= 3 else None
 
         mask = pd.Series([True]*len(df_local))
         if species_sel:
             mask &= (df_local["Shark.common.name"] == species_sel)
-        if injury_sel:
-            mask &= (df_local["Victim.injury"] == injury_sel)
-        if provoked_sel:
-            mask &= (df_local["Provoked/unprovoked"] == provoked_sel)
-
         df_local.loc[mask, "Highlight"] = "Selected"
 
     bubble_data = (
@@ -1080,16 +1039,9 @@ def update_histogram(filtered_data, treemap_path, histogram_type):
     if treemap_path:
         path_parts = treemap_path.split("/")
         species_sel = path_parts[0] if len(path_parts) >= 1 else None
-        injury_sel = path_parts[1] if len(path_parts) >= 2 else None
-        provoked_sel = path_parts[2] if len(path_parts) >= 3 else None
-
         mask = pd.Series([True] * len(df_local))
         if species_sel:
             mask &= (df_local["Shark.common.name"] == species_sel)
-        if injury_sel:
-            mask &= (df_local["Victim.injury"] == injury_sel)
-        if provoked_sel:
-            mask &= (df_local["Provoked/unprovoked"] == provoked_sel)
         df_local = df_local[mask]
 
     if histogram_type == "age":
@@ -1143,26 +1095,20 @@ def update_pcp_graph_no_grouping(filtered_data, treemap_path):
     if df_local.empty:
         return px.scatter(title="No Data in PCP")
 
+    # Again, same subfilter logic for stacked bar 'path'
     if treemap_path:
         path_parts = treemap_path.split("/")
         species_sel = path_parts[0] if len(path_parts) >= 1 else None
-        injury_sel = path_parts[1] if len(path_parts) >= 2 else None
-        provoked_sel = path_parts[2] if len(path_parts) >= 3 else None
-
         mask = pd.Series([True]*len(df_local))
         if species_sel:
             mask &= (df_local["Shark.common.name"] == species_sel)
-        if injury_sel:
-            mask &= (df_local["Victim.injury"] == injury_sel)
-        if provoked_sel:
-            mask &= (df_local["Provoked/unprovoked"] == provoked_sel)
         df_local = df_local[mask]
 
     numeric_cols = [
-        "Shark.length.m",
-        "Site.category.mapped",
-        "Injury.severity.mapped",
-        "Distance.to.shore.m"
+        "Distance.to.shore.m",
+        "Depth.of.incident.m",
+        "Total.water.depth.m",
+        "Time.in.water.min"       
     ]
     for c in numeric_cols:
         df_local[c] = pd.to_numeric(df_local[c], errors="coerce")
@@ -1175,9 +1121,10 @@ def update_pcp_graph_no_grouping(filtered_data, treemap_path):
         df_local,
         dimensions=numeric_cols,
         labels={
-            "Site.category.mapped": "Site ",
-            "Total.water.depth.m": "Depth (m)",
-            "Distance.to.shore.m": "Shore Dist (m)"
+            "Distance.to.shore.m": "Distance (m) ",
+            "Total.water.depth.m": "Total Depth (m)",
+            "Depth.of.incident.m": "Depth of Incident (m)",
+            "Time.in.water.min": "Time (min)"     
         }
     )
     fig.update_traces(line_color="blue")
@@ -1185,22 +1132,27 @@ def update_pcp_graph_no_grouping(filtered_data, treemap_path):
     return fig
 
 
-# # ------------------------------------------------------------------------------
-# # (NEW) Show numeric-to-categorical mapping for Site/Injury
-# # ------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
+# Show numeric-to-categorical mapping for Site/Injury
+# ------------------------------------------------------------------------------
 # @app.callback(
 #     Output("mapping-info", "children"),
 #     [
 #         Input("filtered-data-store", "data"),
-#         Input("pie-selected-species", "data"),
+#         Input("pie-selected-species", "data")
+#         #Input("mapping-info", "n_clicks"),
 #     ]
 # )
-# def display_mapped_legend(filtered_data, treemap_path):
+# def display_mapped_legend(filtered_data, treemap_path, show_clicks):
 #     """
-#     Prints a mini label showing how numeric columns
+#     Prints a mini legend showing how numeric columns
 #     'Site.category.mapped' and 'Injury.severity.mapped'
-#     correspond to their original text values.
+#     correspond to their original text values,
+#     but only after the user clicks the "Show Mapping" button.
 #     """
+#     if show_clicks == 0:
+#         return ""  # or "Click 'Show Mapping' to see numeric→category translations."
+
 #     if not filtered_data:
 #         return "No data available for mapping legend."
 
@@ -1208,20 +1160,14 @@ def update_pcp_graph_no_grouping(filtered_data, treemap_path):
 #     if df_local.empty:
 #         return "No data available for mapping legend."
 
-#     # Match the same subfilter logic as the PCP callback:
+#     # Match subfilter logic from PCP:
 #     if treemap_path:
 #         path_parts = treemap_path.split("/")
 #         species_sel = path_parts[0] if len(path_parts) >= 1 else None
-#         injury_sel = path_parts[1] if len(path_parts) >= 2 else None
-#         provoked_sel = path_parts[2] if len(path_parts) >= 3 else None
 
 #         mask = pd.Series([True]*len(df_local))
 #         if species_sel:
 #             mask &= (df_local["Shark.common.name"] == species_sel)
-#         if injury_sel:
-#             mask &= (df_local["Victim.injury"] == injury_sel)
-#         if provoked_sel:
-#             mask &= (df_local["Provoked/unprovoked"] == provoked_sel)
 #         df_local = df_local[mask]
 
 #     # Gather unique numeric->text pairs for site
