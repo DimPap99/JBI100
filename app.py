@@ -5,6 +5,7 @@ from dash.dependencies import Input, Output, State
 import plotly.express as px
 from datetime import datetime as dt
 from dash.exceptions import PreventUpdate
+import plotly.graph_objects as go
 
 # Initialize the Dash app
 app = dash.Dash(__name__, meta_tags=[{"name": "viewport", "content": "width=device-width"}])
@@ -41,6 +42,9 @@ index_to_date = {i: date for i, date in enumerate(unique_dates)}
 # Convert site category to title case
 df["Site.category"] = df["Site.category"].str.title()
 
+# Create a new column for victim injury as numeric
+df["Victim.injury"] = df["Victim.injury"].str.replace(r"(Injured|injury)", "injured", case=False, regex=True)
+df["Victim.injury.num"] = pd.Categorical(df["Victim.injury"]).codes
 # Fix typos and convert to title case
 df['Victim.activity'] = df['Victim.activity'].str.replace("snorkeling", "snorkelling")
 df['Victim.activity'] = df['Victim.activity'].str.replace("diving, collecting", "diving")
@@ -129,13 +133,13 @@ def get_shark_image(species_name: str) -> str:
 
 # Define colorblind-friendly and default palettes
 CB_COLOR_CYCLE = [
-    '#0072B2', '#D55E00', '#F0E442',
+    '#0072B2','#F0E442', '#D55E00',
     '#009E73', '#56B4E9', '#CC79A7',
     '#E69F00', '#000000'
 ]
 
 
-DEFAULT_COLOR_CYCLE = px.colors.qualitative.Plotly  # Default Plotly palette
+DEFAULT_COLOR_CYCLE = px.colors.qualitative.G10  # Default Plotly palette
 
 def get_color_discrete_sequence(colorblind_active):
     """
@@ -189,7 +193,7 @@ app.layout = html.Div(style={"position": "relative"}, children=[
                     html.Div(
                         className="four columns div-user-controls",
                         children=[
-                            html.H2("DASH - SHARK INCIDENT DATA"),
+                            html.H2("SharkWatch: Shark Incidents in Australia"),
 
                             # Date Range (RangeSlider + inputs)
                             html.P("Select a date range to filter incidents."),
@@ -284,7 +288,7 @@ app.layout = html.Div(style={"position": "relative"}, children=[
                                     "padding": "10px"
                                 },
                                 children=[
-                                    html.H4("Histogram", style={"paddingLeft": "12px"}),
+                                    html.H4("Analyze Contributing Factors", style={"paddingLeft": "12px"}),
 
                                     dcc.RadioItems(
                                         id="histogram-type",
@@ -354,7 +358,7 @@ app.layout = html.Div(style={"position": "relative"}, children=[
                                         style={"flex": "1", "marginRight": "5px"},
                                         children=[
                                             html.H4(
-                                                "Stacked Bar Chart",
+                                                "Shark Species Analysis",
                                                 style={"paddingLeft": "12px"}
                                             ),
                                             dcc.Graph(
@@ -366,14 +370,36 @@ app.layout = html.Div(style={"position": "relative"}, children=[
                                     html.Div(
                                         style={"flex": "1", "marginLeft": "5px"},
                                         children=[
-                                            html.H4("Parallel Coordinates Plot", style={"paddingLeft": "12px"}),
+                                            html.Div(
+                                                style={"display": "flex", "alignItems": "center", "justifyContent": "space-between"},
+                                                children=[
+                                                    html.H4("Shark Profiles", style={"paddingLeft": "12px"}),
+                                                    html.Button(
+                                                        "?",
+                                                        id="color-info-button",
+                                                        title="Learn about the color scheme",
+                                                        style={
+                                                            
+                                                            "color": "white",
+                                                            "border": "none",
+                                                            "borderRadius": "50%",
+                                                            "width": "24px",
+                                                            "height": "24px",
+                                                            "textAlign": "center",
+                                                            "fontSize": "16px",
+                                                            "cursor": "pointer",
+                                                            "marginRight": "12px",
+                                                        },
+                                                    ),
+                                                ],
+                                            ),
                                             dcc.Graph(
                                                 id="pcp-graph",
                                                 style={"height": "85%", "width": "100%"}
-                                            )
-                                        ]
+                                            ),
+                                        ],
                                     ),
-                                ]
+                                ],
                             ),
                         ],
                     ),
@@ -454,53 +480,125 @@ app.layout = html.Div(style={"position": "relative"}, children=[
             style={"float": "right", "margin": "10px"}
         ),
         html.Div(
-            children=[
-                html.H4("How to Use This Tool"),
-                html.P(
-                    "Welcome! This dashboard provides an interactive interface for "
-                    "exploring shark incident data in Australia. Below are some pointers "
-                    "on how to navigate and filter the data:"
-                ),
-                html.Ul([
-                    html.Li(
-                        "Use the date filters and slider to narrow down incidents within a specific time range."
-                    ),
-                    html.Li(
-                        "Select states, shark species, months, or days of the week from the dropdowns to refine your search."
-                    ),
-                    html.Li(
-                        "Click on a bar in the histogram to see details for that category. "
-                        "You can also clear or reset these selections at any time."
-                    ),
-                    html.Li(
-                        "Use the map to explore incidents geographically. "
-                        "Zoom, pan, or click on a point to see more information about a specific incident."
-                    ),
-                    html.Li(
-                        "Box-select (click and drag) on the map or treemap to isolate specific points or categories."
-                    ),
-                    html.Li(
-                        "Open the modal window by clicking on a map point, then use 'Previous' and 'Next' to cycle through incidents."
-                    ),
-                    html.Li(
-                        "If you have color vision difficulties, you can toggle the Colorblind Mode at the top-left."
-                    ),
-                    html.Li(
-                        "Use the Parallel Coordinates Plot to compare numeric variables (e.g., shark length, water depth) across incidents."
-                    ),
-                ]),
-                html.P(
-                    "Feel free to experiment with the filters in any order to discover trends in the data. "
-                    "Click 'Close' to exit this help modal."
-                ),
-            ],
-            style={"color": "black"},
+    children=[
+        html.H4("How to Use This Tool"),
+        html.P(
+            "Welcome! This dashboard provides an interactive interface for "
+            "exploring shark incident data in Australia. Below are some pointers "
+            "on how to navigate and filter the data:"
+        ),
+        html.Ul([
+            html.Li(
+                "Use the date filters and slider to narrow down incidents within a specific time range. "
+                "Click 'Apply' to filter or 'Reset' to clear all filters."
             ),
+            html.Li(
+                "Select states, shark species, months, days of the week, or victim activities "
+                "from the dropdowns to refine your search further."
+            ),
+            html.Li(
+                "Analyze the contributing factors using the histogram. "
+                "Switch between different data dimensions such as 'Victim Age', 'State', 'Month', "
+                "'Day of Week', 'Site Category', or 'Victim Activity' using the radio buttons."
+            ),
+            html.Li(
+                "Click on a bar in the histogram to filter other charts and graphs based on the selection. "
+                "You can toggle your selection or use the 'Clear Selection' button to reset it."
+            ),
+            html.Li(
+                "View detailed shark incident data on the map. You can zoom, pan, and select geographic regions "
+                "to analyze incidents by location. Box-select (click and drag) to isolate specific points."
+            ),
+            html.Li(
+                "The stacked bar chart shows shark species grouped by 'Provoked' or 'Unprovoked' incidents. "
+                "Only the top 10 species are shown, with the rest grouped under 'Other'."
+            ),
+            html.Li(
+                "Use the Parallel Coordinates Plot to explore numeric variables such as water depth, "
+                "distance to shore, total water depth, and time in water. The plot is color-coded based on "
+                "the type of injury for added insight."
+            ),
+            html.Li(
+                "Enable Colorblind Mode using the 'Toggle Colorblind Mode' button at the top-left. "
+                "This updates all charts to use a colorblind-friendly palette."
+            ),
+            html.Li(
+                "Open the modal window by clicking on a point on the map, then use the 'Previous' and 'Next' "
+                "buttons to browse through incidents in detail."
+            ),
+        ]),
+        html.P(
+            "Feel free to experiment with the filters in any order to discover trends in the data. "
+            "Click 'Close' to exit this help modal."
+        ),
+    ],
+    style={"color": "black"},
+    ),
         ],
     ),
-]),
+    # Add a help modal for instructions about the color scheme on the PCP
+    html.Div(
+    id="color-info-modal",
+    style={
+        "display": "none",  # Initially hidden
+        "position": "fixed",
+        "top": "20%",
+        "left": "30%",
+        "width": "40%",
+        "height": "auto",
+        "backgroundColor": "white",
+        "boxShadow": "0px 0px 10px rgba(0, 0, 0, 0.5)",
+        "zIndex": 1000,
+        "padding": "20px",
+        "borderRadius": "10px",
+        "color": "black",  # Ensures the text is black
+    },
+    children=[
+        html.Button(
+            "Close",
+            id="close-color-info-modal",
+            style={"float": "right", "margin": "10px"}
+        ),
+        html.H4(
+            "Color Scheme Information",
+            style={"textAlign": "center", "marginBottom": "20px", "color": "black"}
+        ),
+        html.P(
+            "Below is a table showing the numerical codes and their corresponding categories:",
+            style={"textAlign": "center", "marginBottom": "10px", "color": "black"}
+        ),
+        # DataTable for displaying the mapping
+        dash.dash_table.DataTable(
+            id="injury-category-table",
+            columns=[
+                {"name": "Numeric Code", "id": "numeric_code"},
+                {"name": "Category", "id": "category"}
+            ],
+            data=[
+                {"numeric_code": 0, "category": "Uninjured"},
+                {"numeric_code": 1, "category": "Injured"},
+                {"numeric_code": 2, "category": "Fatal"},
+                # Add more categories as needed
+            ],
+            style_cell={
+                "textAlign": "center",  # Center-align the text
+                "fontSize": "16px",    # Adjust font size
+                "padding": "5px",
+                "color": "black",      # Ensure text color is black
+            },
+            style_header={
+                # "backgroundColor": "#f2f2f2",  # Light gray for header
+                "fontWeight": "bold",
+                "color": "black"
+            },
+            style_table={"width": "100%", "margin": "10px auto"},  # Center the table
+        ),
+    ],
+    ),
+    ]),
 
-# Add a help modal
+
+
     
 
 # ------------------------------------------------------------------------------
@@ -834,7 +932,24 @@ def update_stacked_bar(filtered_data, colorblind_active):
     # sorted descending so top species is first.
 
     # D) sorted_species_list for the x-axis
-    sorted_species_list = species_totals["Shark.common.name"].tolist()
+    # Step 3: Determine the top N species to display
+    max_bars = 10  # Set the maximum number of bars here
+    top_species = species_totals.head(max_bars)["Shark.common.name"].tolist()
+
+    # Step 4: Filter bar_data to only include top species
+    # Group the rest into an "Other" category
+    bar_data["Shark.common.name"] = bar_data["Shark.common.name"].apply(
+        lambda x: x if x in top_species else "Other"
+    )
+
+    # Step 5: Aggregate data again to include "Other" as a single category
+    bar_data = (
+        bar_data.groupby(["Shark.common.name", "Provoked/unprovoked"], as_index=False)
+        .sum()
+    )
+
+    # Step 6: Create the sorted species list (with "Other" at the end)
+    sorted_species_list = top_species + ["Other"]
 
     # E) Choose color palette
     color_discrete_sequence = get_color_discrete_sequence(colorblind_active)
@@ -1183,23 +1298,23 @@ def update_histogram(filtered_data, treemap_path, histogram_type, colorblind_act
     elif histogram_type == "dayofweek":
         df_local = df_local.dropna(subset=["DayOfWeek"])
         x_axis = "DayOfWeek"
-        title = "Histogram: Day of Week"
+        title = "Bar Chart: Day of Week"
     elif histogram_type == "state":
         df_local = df_local.dropna(subset=["State"])
         x_axis = "State"
-        title = "Histogram: State"
+        title = "Bar Chart: State"
     elif histogram_type == "month":
         df_local = df_local.dropna(subset=["Month"])
         x_axis = "Month"
-        title = "Histogram: Month"
+        title = "Bar Chart: Month"
     elif histogram_type == "sitecategory":
         df_local = df_local.dropna(subset=["Site.category"])
         x_axis = "Site.category"
-        title = "Histogram: Site Category"
+        title = "Bar Chart: Site Category"
     elif histogram_type == "activity":
         df_local = df_local.dropna(subset=["Victim.activity"])
         x_axis = "Victim.activity"
-        title = "Histogram: Victim Activity"
+        title = "Bar Chart: Victim Activity"
     else:
         return px.scatter(title="Invalid Histogram Type")
 
@@ -1257,6 +1372,7 @@ def update_pcp_graph_no_grouping(filtered_data, treemap_path, colorblind_active)
 
     numeric_cols = [
         "Distance.to.shore.m",
+        "Depth.of.incident.m",
         "Total.water.depth.m",
         "Time.in.water.min"
     ]
@@ -1267,24 +1383,49 @@ def update_pcp_graph_no_grouping(filtered_data, treemap_path, colorblind_active)
     if df_local.empty:
         return px.scatter(title="No Data for PCP")
 
-    fig = px.parallel_coordinates(
-        df_local,
-        dimensions=numeric_cols,
-        labels={
-            "Distance.to.shore.m": "Shore Dist (m)",
-            "Total.water.depth.m": "Water Depth (m)",
-            "Time.in.water.min": "Time in water (min)"
-        }
-    )
+    color_map = px.colors.sequential.Cividis if colorblind_active else px.colors.sequential.RdBu
 
-    if colorblind_active:
-        # example color that stands out well for colorblind
-        fig.update_traces(line_color="#3B528B")
-    else:
-        # original color
-        fig.update_traces(line_color="blue")
+    fig = go.Figure(data=go.Parcoords(
+        line=dict(
+            color=df_local['Victim.injury.num'],  # Line color based on numeric injury
+            colorscale=color_map,  # Color scale
+            showscale=True,  # Show the color scale legend
+            cmin=df_local['Victim.injury.num'].min(),  # Min value for color scale
+            cmax=df_local['Victim.injury.num'].max(),  # Max value for color scale
+        ),
+        dimensions=[
+            dict(
+                label="Shore Dist (m)",  # Label for this dimension
+                values=df_local["Distance.to.shore.m"],  # Values for this dimension
+                range=[df_local["Distance.to.shore.m"].min(), 4000],
+                constraintrange=[10, 50]  # Optional: highlight a range
+            ),
+            dict(
+                label="Incident Depth (m)",
+                values=df_local["Depth.of.incident.m"],
+                range=[df_local["Depth.of.incident.m"].min(), df_local["Depth.of.incident.m"].max()],
+            ),
+            dict(
+                label="Total Water Depth (m)",
+                values=df_local["Total.water.depth.m"],
+                range=[df_local["Total.water.depth.m"].min(), df_local["Total.water.depth.m"].max()],
+            ),
+            dict(
+                label="Time in Water (min)",
+                values=df_local["Time.in.water.min"],
+                range=[df_local["Time.in.water.min"].min(), df_local["Time.in.water.min"].max()],
+            )
+            ]
+        ))
 
-    fig.update_layout(title="")
+    # if colorblind_active:
+    #     # example color that stands out well for colorblind
+    #     fig.update_traces(line_color="#3B528B")
+    # else:
+    #     # original color
+    #     fig.update_traces(line_color="blue")
+
+    fig.update_layout(title="Parallel Coordinates Plot")
     return fig
 
 # ------------------------------------------------------------------------------
@@ -1371,7 +1512,7 @@ def accumulate_histogram_bins(click_data, store_data, current_hist_type):
     return store_data
 
 # -------------------------------------------------------
-# Clear Histogram Selection
+# 11) Clear Histogram Selection
 # -------------------------------------------------------
 @app.callback(
     [
@@ -1389,6 +1530,48 @@ def clear_multi_histogram_selection(n_clicks):
     if n_clicks:
         empty_store = {"hist_type": None, "values": []}
         return empty_store, None
+    raise PreventUpdate
+
+# ------------------------------------------------------------------------------
+# 12) Color Info Modal
+# ------------------------------------------------------------------------------
+@app.callback(
+    [
+    Output("color-info-modal", "style"),
+    Output("background-container", "className", allow_duplicate=True),
+    ],
+    [
+        Input("color-info-button", "n_clicks"),
+        Input("close-color-info-modal", "n_clicks"),
+    ],
+    prevent_initial_call=True
+)
+def toggle_color_info_modal(open_clicks, close_clicks):
+    ctx = dash.callback_context
+    if not ctx.triggered:
+        raise PreventUpdate
+    triggered_id = ctx.triggered[0]["prop_id"].split(".")[0]
+
+    if triggered_id == "color-info-button":
+        return ({
+            "display": "block",
+            "position": "fixed",
+            "top": "20%",
+            "left": "30%",
+            "width": "40%",
+            "height": "auto",
+            "backgroundColor": "white",
+            "boxShadow": "0px 0px 10px rgba(0, 0, 0, 0.5)",
+            "zIndex": 1000,
+            "padding": "20px",
+            "borderRadius": "10px",
+        },
+        "blurred",
+    )
+
+    elif triggered_id == "close-color-info-modal":
+        return {"display": "none"}, ""
+
     raise PreventUpdate
 
 # ------------------------------------------------------------------------------
