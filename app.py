@@ -62,6 +62,16 @@ df["Time.in.water.min"] = pd.to_numeric(df.get("Time.in.water.min"), errors="coe
 # Victim age
 df["Victim.age"] = pd.to_numeric(df.get("Victim.age"), errors="coerce")
 
+# Define bins for Victim.age
+age_bins = [0, 4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 44, 48, 52, 56, 60, 64, 68, 72, 76, 80, 84, 88, 92, 96, 100]
+age_labels = [f"{age}-{age+3}" for age in age_bins[:-1]]
+
+# Create a new column for age group
+df["Victim.age.group"] = pd.cut(df["Victim.age"], bins=age_bins, labels=age_labels, right=False)
+# Handle missing values
+# df["Victim.age.group"] = df["Victim.age.group"].cat.add_categories("Unknown").fillna("Unknown")
+
+
 # Custom month and day order for dropdown
 custom_month_order = [
     "January", "February", "March", "April", "May", "June",
@@ -72,6 +82,7 @@ custom_day_order = [
     "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"
 ]
 
+custom_age_order = age_labels + ["Unknown"]
 # State filter
 state_options = [
     {"label": st, "value": st}
@@ -403,7 +414,8 @@ app.layout = html.Div(style={"position": "relative"}, children=[
     dcc.Store(id="pie-selected-species", data=None),
     dcc.Store(id="histogram-click-store", data=None),
     dcc.Store(id="colorblind-store", data=False),
-    dcc.Store(id="selected-bins", data={"hist_type": "age", "values": []}),  # or whatever initial structure you prefer
+    dcc.Store(id="selected-bins", data={"hist_type": "age", "values": []}),
+    dcc.Store(id="temp-bin-selection", data={"hist_type": None, "values": []}),
 
     # Modal
     html.Div(
@@ -767,7 +779,7 @@ def update_filtered_data_store(
     if hist_type and bin_list:
         if hist_type == "age":
             # numeric match for Victim.age
-            filtered_df_local = filtered_df_local[filtered_df_local["Victim.age"].isin(bin_list)]
+            filtered_df_local = filtered_df_local[filtered_df_local["Victim.age.group"].isin(bin_list)]
         elif hist_type == "state":
             filtered_df_local = filtered_df_local[filtered_df_local["State"].isin(bin_list)]
         elif hist_type == "month":
@@ -1195,13 +1207,10 @@ def get_nav_button_styles(num_rows, current_idx, prev_style, next_style):
         Input("pie-selected-species", "data"),        # Auto-update on pie chart selection
         Input("histogram-type", "value"),             # Auto-update on radio button
         Input("update-histogram-button", "n_clicks"),  # Manual trigger
-    ],
-    [
-        State("selected-bins", "data"),                # Multi-bin selection
-        State("colorblind-store", "data"),            # Colorblind mode
+        Input("colorblind-store", "data"),            # Colorblind mode
     ],
 )
-def update_histogram_on_click(filtered_data, treemap_path, histogram_type, n_clicks, selected_bins, colorblind_active):
+def update_histogram(filtered_data, treemap_path, histogram_type, n_clicks, colorblind_active):
     """
     Update the histogram based on:
     - Dynamic changes (filters, treemap selections, radio items)
@@ -1228,10 +1237,9 @@ def update_histogram_on_click(filtered_data, treemap_path, histogram_type, n_cli
 
     # Apply histogram type
     if histogram_type == "age":
-        df_local["Victim.age"] = pd.to_numeric(df_local["Victim.age"], errors="coerce")
-        df_local = df_local.dropna(subset=["Victim.age"])
-        x_axis = "Victim.age"
-        title = "Histogram: Victim Age"
+        df_local = df_local.dropna(subset=["Victim.age.group"])
+        x_axis = "Victim.age.group"
+        title = "Histogram: Victim Age Group"
     elif histogram_type == "dayofweek":
         df_local = df_local.dropna(subset=["DayOfWeek"])
         x_axis = "DayOfWeek"
@@ -1262,11 +1270,12 @@ def update_histogram_on_click(filtered_data, treemap_path, histogram_type, n_cli
     fig = px.histogram(
         df_local,
         x=x_axis,
-        category_orders={"DayOfWeek": custom_day_order, "Month": custom_month_order},
+        category_orders={"Victim.age.group": custom_age_order,"DayOfWeek": custom_day_order, "Month": custom_month_order},
         title=title,
         barnorm = None,
         color_discrete_sequence=color_discrete_sequence,
     )
+
 
     fig.update_layout(
         clickmode="event+select",
@@ -1413,39 +1422,36 @@ def toggle_help_modal(help_clicks, close_help_clicks):
 # NEW CALLBACK: Toggle bins in "selected-bins" via clicks
 # -------------------------------------------------------
 @app.callback(
-    Output("selected-bins", "data"),
+    Output("temp-bin-selection", "data", allow_duplicate=True),
     Input("third-chart", "clickData"),
     [
-        State("selected-bins", "data"),
+        State("temp-bin-selection", "data"),
         State("histogram-type", "value"),
     ],
     prevent_initial_call=True
 )
-def accumulate_histogram_bins(click_data, store_data, current_hist_type):
+def accumulate_temp_bins(click_data, temp_store, current_hist_type):
     """
-    Each click on a histogram bin will toggle that bin in store_data["values"].
-    We also store the histogram type so we know which dimension is being selected.
+    Update temporary bin selections on bin clicks but don't apply them yet.
     """
     if not click_data or "points" not in click_data or not click_data["points"]:
         raise PreventUpdate
 
     bin_clicked = click_data["points"][0].get("x")
-    if store_data is None:
-        store_data = {"hist_type": current_hist_type, "values": []}
+    if temp_store is None:
+        temp_store = {"hist_type": current_hist_type, "values": []}
 
-    # If user switched histogram type (age -> month, etc.), reset old selections
-    if store_data["hist_type"] != current_hist_type:
-        store_data = {"hist_type": current_hist_type, "values": []}
+    # Reset old selections if histogram type changes
+    if temp_store["hist_type"] != current_hist_type:
+        temp_store = {"hist_type": current_hist_type, "values": []}
 
-    # Toggle logic
-    if bin_clicked in store_data["values"]:
-        # If bin is already selected, remove it
-        store_data["values"].remove(bin_clicked)
+    # Toggle logic for bins
+    if bin_clicked in temp_store["values"]:
+        temp_store["values"].remove(bin_clicked)
     else:
-        # Otherwise add it
-        store_data["values"].append(bin_clicked)
+        temp_store["values"].append(bin_clicked)
 
-    return store_data
+    return temp_store
 
 # -------------------------------------------------------
 # 11) Clear Histogram Selection
@@ -1453,46 +1459,39 @@ def accumulate_histogram_bins(click_data, store_data, current_hist_type):
 @app.callback(
     [
         Output("selected-bins", "data", allow_duplicate=True),
-        Output("third-chart", "clickData", allow_duplicate=True),
+        Output("temp-bin-selection", "data"),
     ],
     Input("clear-histogram-selection", "n_clicks"),
-    [
-        State("filtered-data-store", "data"),
-        State("colorblind-store", "data"),
-    ],
     prevent_initial_call=True
 )
-def clear_multi_histogram_selection(n_clicks, filtered_data, colorblind_active):
+def clear_bin_selections(n_clicks):
     """
-    Reset both the selected-bins store and the histogram's own clickData
-    whenever the user clicks the 'Clear Selection' button.
+    Reset both the applied bins and temporary bin selections.
     """
     if n_clicks is None:
         raise PreventUpdate
 
-    # Reset the `selected-bins` store
-    empty_bins = {"hist_type": None, "values": []}
+    empty_selection = {"hist_type": None, "values": []}
+    return empty_selection, empty_selection
 
-    # Generate the default "Victim Age" histogram
-    df_local = pd.DataFrame(filtered_data)
-    df_local["Victim.age"] = pd.to_numeric(df_local["Victim.age"], errors="coerce")
-    df_local = df_local.dropna(subset=["Victim.age"])
+# -------------------------------------------------------
+# 12) Apply Selected Bins
+# -------------------------------------------------------
+@app.callback(
+    Output("selected-bins", "data", allow_duplicate=True),
+    Input("update-histogram-button", "n_clicks"),
+    State("temp-bin-selection", "data"),
+    prevent_initial_call=True
+)
+def apply_selected_bins(n_clicks, temp_selection):
+    """
+    Apply temporary bin selections to the main store when the button is clicked.
+    """
+    if n_clicks is None or not temp_selection:
+        raise PreventUpdate
 
-    color_discrete_sequence = get_color_discrete_sequence(colorblind_active)
+    return temp_selection
 
-    fig = px.histogram(
-        df_local,
-        x="Victim.age",
-        title="Histogram: Victim Age",
-        color_discrete_sequence=color_discrete_sequence,
-    )
-
-    fig.update_layout(
-        clickmode="event+select",
-        margin={"r": 0, "t": 40, "l": 0, "b": 0}
-    )
-
-    return empty_bins, fig
 
 # ------------------------------------------------------------------------------
 # Run
