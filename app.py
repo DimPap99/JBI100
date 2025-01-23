@@ -1328,7 +1328,7 @@ def update_pcp_graph_no_grouping(filtered_data, treemap_path, colorblind_active)
     if df_local.empty:
         return px.scatter(title="No Data for PCP")
 
-    color_map = px.colors.sequential.Cividis if colorblind_active else px.colors.sequential.RdBu
+    color_map = px.colors.sequential.Cividis if colorblind_active else px.colors.sequential.Bluered
 
     fig = go.Figure(data=go.Parcoords(
         line=dict(
