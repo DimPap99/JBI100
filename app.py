@@ -24,33 +24,37 @@ df.dropna(subset=["Latitude", "Longitude"], inplace=True)
 df["Latitude"] = df["Latitude"].round(5)
 df["Longitude"] = df["Longitude"].round(5)
 
-# Construct a single 'Date' column
+# Reconstruct 'Date' column from year-month data
 df["Date"] = pd.to_datetime(
     df["Incident.year"].astype(str) + "-" + df["Incident.month"].astype(str),
     errors="coerce"
 )
 
-# Additional columns
+# New columns for better filtering and grouping
 df["Month"] = df["Date"].dt.month_name()
 df["DayOfWeek"] = df["Date"].dt.day_name()
 
+# Sorting 'Date' values
 df = df.sort_values("Date")
+
+# Store unique dates and create mappings to indices
 unique_dates = df["Date"].dropna().unique()
 date_to_index = {date: i for i, date in enumerate(unique_dates)}
 index_to_date = {i: date for i, date in enumerate(unique_dates)}
 
-# Convert site category to title case
+# Convert 'Site.category' to title case
 df["Site.category"] = df["Site.category"].str.title()
 
-# Create a new column for victim injury as numeric
+# Create numeric codes for Victim.injury
+# eplacing values in Victim.injury column where it is needed
 df["Victim.injury"] = df["Victim.injury"].str.replace(r"(Injured|injury)", "injured", case=False, regex=True)
 df["Victim.injury.num"] = pd.Categorical(df["Victim.injury"]).codes
-# Fix typos and convert to title case
+
+# Replacing values in 'Victim.activity' column where it is needed
 df['Victim.activity'] = df['Victim.activity'].str.replace("snorkeling", "snorkelling")
 df['Victim.activity'] = df['Victim.activity'].str.replace("diving, collecting", "diving")
 
-
-# Convert numeric columns
+# Convert certain columns to numeric, ignoring errors
 df["Shark.length.m"] = pd.to_numeric(df.get("Shark.length.m"), errors="coerce")
 df["Depth.of.incident.m"] = pd.to_numeric(df.get("Depth.of.incident.m"), errors="coerce")
 df["Distance.to.shore.m"] = pd.to_numeric(df.get("Distance.to.shore.m"), errors="coerce")
@@ -59,20 +63,17 @@ df["Air.temperature.°C"] = pd.to_numeric(df.get("Air.temperature.°C"), errors=
 df["Total.water.depth.m"] = pd.to_numeric(df.get("Total.water.depth.m"), errors="coerce")
 df["Time.in.water.min"] = pd.to_numeric(df.get("Time.in.water.min"), errors="coerce")
 
-# Victim age
+# Convert victim age to numeric
 df["Victim.age"] = pd.to_numeric(df.get("Victim.age"), errors="coerce")
 
-# Define bins for Victim.age
+# Define bins and labels for Victim.age grouping
 age_bins = [0, 4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 44, 48, 52, 56, 60, 64, 68, 72, 76, 80, 84, 88, 92, 96, 100]
 age_labels = [f"{age}-{age+3}" for age in age_bins[:-1]]
 
 # Create a new column for age group
 df["Victim.age.group"] = pd.cut(df["Victim.age"], bins=age_bins, labels=age_labels, right=False)
-# Handle missing values
-# df["Victim.age.group"] = df["Victim.age.group"].cat.add_categories("Unknown").fillna("Unknown")
 
-
-# Custom month and day order for dropdown
+# Define custom sorting orders for months, days, and age bins
 custom_month_order = [
     "January", "February", "March", "April", "May", "June",
     "July", "August", "September", "October", "November", "December"
@@ -83,12 +84,12 @@ custom_day_order = [
 ]
 
 custom_age_order = age_labels + ["Unknown"]
-# State filter
+
+# Prepare dropdown options for filters
 state_options = [
     {"label": st, "value": st}
     for st in sorted(df["State"].dropna().unique())
 ]
-# Build the list of dropdown options
 species_options = [
     {"label": s, "value": s}
     for s in df["Shark.common.name"].dropna().unique()
@@ -108,6 +109,7 @@ victim_activity_options = [
     for act in df["Victim.activity"].dropna().unique()
 ]
 
+# Maping shark species to corresponding images
 species_image_map = {
     "grey reef shark": "gray-reef-shark.webp",
     "dogfish": "dogfish.webp",
@@ -135,8 +137,13 @@ species_image_map = {
     "lemon shark": "lemon-shark.jpg",
 }
 
-
 def get_shark_image(species_name: str) -> str:
+    """
+    Returns the corresponding shark image filename based on the species name.
+    If not recognized, defaults to 'unknown.webp'.
+    :param species: a string variable referring to shark's species 
+    :return: The image filename for the given species from the `species_image_map` dictionary.
+    """
     if not species_name or not isinstance(species_name, str):
         return "unknown.webp"
     clean = species_name.strip().lower()
@@ -149,12 +156,15 @@ CB_COLOR_CYCLE = [
     '#E69F00', '#000000'
 ]
 
-
 DEFAULT_COLOR_CYCLE = px.colors.qualitative.G10  # Default Plotly palette
 
 def get_color_discrete_sequence(colorblind_active):
     """
-    Return the appropriate color_discrete_sequence based on the colorblind mode.
+    Switching to colorblind mode
+    :param colorblind_active: a boolean variable
+    :return: a colorblind-friendly set of colors (CB_COLOR_CYCLE) or the default Plotly color cycle
+
+
     """
     return CB_COLOR_CYCLE if colorblind_active else DEFAULT_COLOR_CYCLE
 
@@ -163,36 +173,34 @@ def get_color_discrete_sequence(colorblind_active):
 # ------------------------------------------------------------------------------
 app.layout = html.Div(style={"position": "relative"}, children=[
 
-    # (1) New Button & Store for toggling colorblind mode
+    # (1) Button & Store for toggling colorblind mode
     html.Div(
-    [
-        html.Button(
-            "Toggle Colorblind Mode",
-            id="toggle-colorblind-button",
-            n_clicks=0,
-            style={
-                "zIndex": 9999
-            }
-        ),
-        html.Button(
-            "Help",
-            id="help-button",
-            n_clicks=0,
-            style={
-                "zIndex": 9999
-            }
-        )
-    ],
-    style={
-        "position": "absolute",
-        "top": "10px",
-        "left": "10px",
-        "display": "flex",
-        "alignItems": "center"
+        [
+            html.Button(
+                "Toggle Colorblind Mode",
+                id="toggle-colorblind-button",
+                n_clicks=0,
+                style={
+                    "zIndex": 9999
+                }
+            ),
+            html.Button(
+                "Help",
+                id="help-button",
+                n_clicks=0,
+                style={
+                    "zIndex": 9999
+                }
+            )
+        ],
+        style={
+            "position": "absolute",
+            "top": "10px",
+            "left": "10px",
+            "display": "flex",
+            "alignItems": "center"
         }
     ),
-
-   
 
     html.Div(
         id="background-container",
@@ -249,9 +257,7 @@ app.layout = html.Div(style={"position": "relative"}, children=[
                                     for i in range(0, len(unique_dates), 50)
                                 },
                                 tooltip={"placement": "bottom", "always_visible": True},
-
-                                # New className (default is "blue-slider" in normal mode)
-                                className="blue-slider"
+                                className="blue-slider"  # default class for color
                             ),
                             html.P("Filters:"),
                             dcc.Dropdown(
@@ -301,6 +307,7 @@ app.layout = html.Div(style={"position": "relative"}, children=[
                                 children=[
                                     html.H4("Analyze Contributing Factors", style={"paddingLeft": "12px", "color": "grey"}),
 
+                                    # Radio buttons to choose histogram type
                                     dcc.RadioItems(
                                         id="histogram-type",
                                         options=[
@@ -315,18 +322,20 @@ app.layout = html.Div(style={"position": "relative"}, children=[
                                         inline=True,
                                         style={"marginBottom": "15px", "color": "grey"} 
                                     ),
+
+                                    # Buttons for applying or clearing histogram selections
                                     html.Button(
                                         "Apply Selection",
                                         id="update-histogram-button",
-                                        n_clicks=0,  # Default value
+                                        n_clicks=0,
                                         style={"marginTop": "15px", "marginBottom": "15px"}
-                                        ),
+                                    ),
                                     html.Button(
                                         "Clear Selection",
                                         id="clear-histogram-selection",
                                         n_clicks=0,
                                         style={"marginBottom": "15px"}
-                                        ),
+                                    ),
                                     dcc.Graph(
                                         id="third-chart",
                                         style={"height": "85%", "width": "100%"},
@@ -337,7 +346,7 @@ app.layout = html.Div(style={"position": "relative"}, children=[
                         ],
                     ),
 
-                    # Right Column (Map + Treemap + PCP)
+                    # Right Column (Map + Bar + PCP)
                     html.Div(
                         className="eight columns div-for-charts bg-grey",
                         style={
@@ -359,7 +368,7 @@ app.layout = html.Div(style={"position": "relative"}, children=[
                                     )
                                 ]
                             ),
-                            # Treemap + PCP side by side
+                            # Bar + PCP side by side
                             html.Div(
                                 style={
                                     "flex": "0 0 50%",
@@ -407,7 +416,7 @@ app.layout = html.Div(style={"position": "relative"}, children=[
     ),
 
     # --------------------------------------------------------------------------
-    # Stores
+    # Stores (shared data between callbacks)
     # --------------------------------------------------------------------------
     dcc.Store(id="selected-incidents-store", data={"rows": [], "current_index": 0}),
     dcc.Store(id="filtered-data-store", data=df.to_dict("records")),
@@ -417,7 +426,7 @@ app.layout = html.Div(style={"position": "relative"}, children=[
     dcc.Store(id="selected-bins", data={"hist_type": "age", "values": []}),
     dcc.Store(id="temp-bin-selection", data={"hist_type": None, "values": []}),
 
-    # Modal
+    # Modal to display detailed incident info
     html.Div(
         id="info-modal",
         style={
@@ -455,90 +464,88 @@ app.layout = html.Div(style={"position": "relative"}, children=[
             html.Div(id="modal-incident-content"),
         ],
     ),
+
+    # Help modal
     html.Div(
-    id="help-modal",
-    style={
-        "display": "none",
-        "position": "fixed",
-        "top": "20%",
-        "left": "30%",
-        "width": "40%",
-        "height": "auto",
-        "backgroundColor": "white",
-        "boxShadow": "0px 0px 10px rgba(0, 0, 0, 0.5)",
-        "zIndex": 1000,
-        "padding": "20px",
-        "borderRadius": "10px",
-        "color": "black",
-    },
-    children=[
-        html.Button(
-            "Close",
-            id="close-help-modal",
-            style={"float": "right", "margin": "10px"}
-        ),
-        html.Div(
-    children=[
-        html.H4("How to Use This Tool"),
-        html.P(
-            "Welcome! This dashboard provides an interactive interface for "
-            "exploring shark incident data in Australia. Below are some pointers "
-            "on how to navigate and filter the data:"
-        ),
-        html.Ul([
-            html.Li(
-                "Use the date filters and slider to narrow down incidents within a specific time range. "
-                "Click 'Apply' to filter or 'Reset' to clear all filters."
+        id="help-modal",
+        style={
+            "display": "none",
+            "position": "fixed",
+            "top": "20%",
+            "left": "30%",
+            "width": "40%",
+            "height": "auto",
+            "backgroundColor": "white",
+            "boxShadow": "0px 0px 10px rgba(0, 0, 0, 0.5)",
+            "zIndex": 1000,
+            "padding": "20px",
+            "borderRadius": "10px",
+            "color": "black",
+        },
+        children=[
+            html.Button(
+                "Close",
+                id="close-help-modal",
+                style={"float": "right", "margin": "10px"}
             ),
-            html.Li(
-                "Select states, shark species, months, days of the week, or victim activities "
-                "from the dropdowns to refine your search further."
+            html.Div(
+                children=[
+                    html.H4("How to Use This Tool"),
+                    html.P(
+                        "Welcome! This dashboard provides an interactive interface for "
+                        "exploring shark incident data in Australia. Below are some pointers "
+                        "on how to navigate and filter the data:"
+                    ),
+                    html.Ul([
+                        html.Li(
+                            "Use the date filters and slider to narrow down incidents within a specific time range. "
+                            "Click 'Apply' to filter or 'Reset' to clear all filters."
+                        ),
+                        html.Li(
+                            "Select states, shark species, months, days of the week, or victim activities "
+                            "from the dropdowns to refine your search further."
+                        ),
+                        html.Li(
+                            "Analyze the contributing factors using the histogram. "
+                            "Switch between different data dimensions such as 'Victim Age', 'State', 'Month', "
+                            "'Day of Week', 'Site Category', or 'Victim Activity' using the radio buttons."
+                        ),
+                        html.Li(
+                            "Click on a bar in the histogram to filter other charts and graphs based on the selection. "
+                            "You can toggle your selection or use the 'Clear Selection' button to reset it."
+                        ),
+                        html.Li(
+                            "View detailed shark incident data on the map. You can zoom, pan, and select geographic regions "
+                            "to analyze incidents by location. Box-select (click and drag) to isolate specific points."
+                        ),
+                        html.Li(
+                            "The stacked bar chart shows shark species grouped by 'Provoked' or 'Unprovoked' incidents. "
+                            "Only the top 10 species are shown, with the rest grouped under 'Other'."
+                        ),
+                        html.Li(
+                            "Use the Parallel Coordinates Plot to explore numeric variables such as water depth, "
+                            "distance to shore, total water depth, and time in water. The plot is color-coded based on "
+                            "the type of injury for added insight."
+                        ),
+                        html.Li(
+                            "Enable Colorblind Mode using the 'Toggle Colorblind Mode' button at the top-left. "
+                            "This updates all charts to use a colorblind-friendly palette."
+                        ),
+                        html.Li(
+                            "Open the modal window by clicking on a point on the map, then use the 'Previous' and 'Next' "
+                            "buttons to browse through incidents in detail."
+                        ),
+                    ]),
+                    html.P(
+                        "Feel free to experiment with the filters in any order to discover trends in the data. "
+                        "Click 'Close' to exit this help modal."
+                    ),
+                ],
+                style={"color": "black"},
             ),
-            html.Li(
-                "Analyze the contributing factors using the histogram. "
-                "Switch between different data dimensions such as 'Victim Age', 'State', 'Month', "
-                "'Day of Week', 'Site Category', or 'Victim Activity' using the radio buttons."
-            ),
-            html.Li(
-                "Click on a bar in the histogram to filter other charts and graphs based on the selection. "
-                "You can toggle your selection or use the 'Clear Selection' button to reset it."
-            ),
-            html.Li(
-                "View detailed shark incident data on the map. You can zoom, pan, and select geographic regions "
-                "to analyze incidents by location. Box-select (click and drag) to isolate specific points."
-            ),
-            html.Li(
-                "The stacked bar chart shows shark species grouped by 'Provoked' or 'Unprovoked' incidents. "
-                "Only the top 10 species are shown, with the rest grouped under 'Other'."
-            ),
-            html.Li(
-                "Use the Parallel Coordinates Plot to explore numeric variables such as water depth, "
-                "distance to shore, total water depth, and time in water. The plot is color-coded based on "
-                "the type of injury for added insight."
-            ),
-            html.Li(
-                "Enable Colorblind Mode using the 'Toggle Colorblind Mode' button at the top-left. "
-                "This updates all charts to use a colorblind-friendly palette."
-            ),
-            html.Li(
-                "Open the modal window by clicking on a point on the map, then use the 'Previous' and 'Next' "
-                "buttons to browse through incidents in detail."
-            ),
-        ]),
-        html.P(
-            "Feel free to experiment with the filters in any order to discover trends in the data. "
-            "Click 'Close' to exit this help modal."
-        ),
-    ],
-    style={"color": "black"},
-            ),
-        ],
+        ]
     )
-    ]),
-
-
-
-    
+])
 
 # ------------------------------------------------------------------------------
 # (A) NEW CALLBACK: Toggle the colorblind-store
@@ -551,7 +558,8 @@ app.layout = html.Div(style={"position": "relative"}, children=[
 )
 def toggle_colorblind_mode(n_clicks, current_value):
     """
-    Simply flip the boolean in colorblind-store each time the button is clicked.
+    Toggles the boolean value stored in 'colorblind-store' each time
+    the 'Toggle Colorblind Mode' button is clicked.
     """
     return not current_value
 
@@ -564,14 +572,15 @@ def toggle_colorblind_mode(n_clicks, current_value):
 )
 def update_slider_classname(colorblind_active):
     """
-    Toggle the slider's CSS class.
-    If colorblind_active=True, assign 'grey-slider';
-    otherwise 'blue-slider'.
+    Determines the appropriate CSS class for the date slider to indicate colorblind mode.
+
+    :param colorblind_active: A boolean indicating whether colorblind mode is enabled.
+    :return: The slider's CSS class name ("grey-slider" if colorblind mode is on, "blue-slider" otherwise).
     """
     return "grey-slider" if colorblind_active else "blue-slider"
 
 # ------------------------------------------------------------------------------
-# 1) Single Callback to Handle "Apply" AND "Reset"  (Unchanged)
+# 1) Single Callback to Handle "Apply" AND "Reset" Buttons
 # ------------------------------------------------------------------------------
 @app.callback(
     [
@@ -602,6 +611,18 @@ def apply_or_reset(
     apply_clicks, reset_clicks,
     current_start_date, current_end_date, current_slider
 ):
+    """
+    Manages the 'Apply' and 'Reset' buttons for date filtering.
+
+    :param apply_clicks: Number of times the 'Apply' button has been clicked.
+    :param reset_clicks: Number of times the 'Reset' button has been clicked.
+    :param current_start_date: Current input for the start date (in 'YYYY-MM-DD' format).
+    :param current_end_date: Current input for the end date (in 'YYYY-MM-DD' format).
+    :param current_slider: Current [min, max] indices on the date slider.
+    :return: A tuple that updates multiple outputs, depending on which button was triggered:
+       - If 'Apply': validates the text-input date ranges and adjusts the slider accordingly.
+       - If 'Reset': returns all filters to their default states.
+    """
     ctx = dash.callback_context
     if not ctx.triggered:
         raise PreventUpdate
@@ -661,14 +682,13 @@ def apply_or_reset(
             [],
             [],
             None,
-            {"hist_type": "age", "values": []}  # or whatever initial structure you prefer
+            {"hist_type": "age", "values": []}
         )
 
     raise PreventUpdate
 
-
 # ------------------------------------------------------------------------------
-# 2) COMBINED callback for treemap-click + reset => set pie-selected-species (Unchanged)
+# 2) Combined callback for "Treemap (Bar) click" + "Reset" => set pie-selected-species
 # ------------------------------------------------------------------------------
 @app.callback(
     Output("pie-selected-species", "data"),
@@ -679,6 +699,14 @@ def apply_or_reset(
     prevent_initial_call=True
 )
 def handle_bar_click_and_reset(bar_click, reset_clicks):
+    """
+    Responds to clicks on the stacked bar chart
+
+    :param bar_click: Data from the bar chart's click event, containing details like the
+                      clicked bar's species and provoked/unprovoked status.
+    :param reset_clicks: Number of times the 'Reset' button has been clicked.
+    :return: A string combining the clicked species and provoked/unprovoked status, or None on reset.
+    """
     ctx = dash.callback_context
     if not ctx.triggered:
         raise PreventUpdate
@@ -696,37 +724,7 @@ def handle_bar_click_and_reset(bar_click, reset_clicks):
     return dash.no_update
 
 # ------------------------------------------------------------------------------
-# (2) CALLBACK FOR HISTOGRAM CLICK => Store selected 'Victim.age' 
-# ------------------------------------------------------------------------------
-# @app.callback(
-#     Output("histogram-click-store", "data"),
-#     [
-#         Input("third-chart", "clickData"),
-#         Input("reset-button", "n_clicks")
-#     ],
-#     [State("histogram-type", "value")],
-#     prevent_initial_call=True
-# )
-# def handle_histogram_click(click_data, reset_clicks, histogram_type):
-    
-#     ctx = dash.callback_context
-#     if not ctx.triggered:
-#         raise PreventUpdate
-
-#     triggered_id = ctx.triggered[0]["prop_id"].split(".")[0]
-
-#     if triggered_id == "third-chart" and click_data:
-#         clicked_value = click_data["points"][0].get("x")
-#         return {"type": histogram_type, "value": clicked_value}
-
-#     elif triggered_id == "reset-button":
-#         return None
-
-#     raise PreventUpdate
-
-
-# ------------------------------------------------------------------------------
-# 3) “Master” Filtering Callback (including NEW State filter & histogram click)
+# 3) “Master” Filtering Callback (includes state filter & histogram bin selection)
 # ------------------------------------------------------------------------------
 @app.callback(
     Output("filtered-data-store", "data"),
@@ -746,10 +744,25 @@ def update_filtered_data_store(
     map_selected, selected_months, selected_dows,
     selected_activities, selected_bins
 ):
-    
+    """
+    Consolidates all filter inputs 
+
+    :param slider_range: A list of two indices [start_idx, end_idx] 
+                         referencing positions in the list of unique dates.
+    :param selected_states: A list of states selected from the 'state-dropdown'.
+    :param selected_species: A list of shark species selected from the 'species-dropdown'.
+    :param map_selected: Map selection data (not directly used here, but included for clarity).
+    :param selected_months: A list of month names selected from the 'month-dropdown'.
+    :param selected_dows: A list of days of the week selected from the 'dayofweek-dropdown'.
+    :param selected_activities: A list of victim activities selected from the 'victim-activity-dropdown'.
+    :param selected_bins: A dictionary containing the histogram filter selections, e.g. 
+                         {"hist_type": "age", "values": [...]}
+
+    :return: A list of dictionaries representing the filtered DataFrame rows.
+    """
     filtered_df_local = df.copy()
 
-    # 1) Filter by date
+    # Filter by date slider
     if slider_range:
         start_date = index_to_date[slider_range[0]]
         end_date = index_to_date[slider_range[1]]
@@ -758,7 +771,7 @@ def update_filtered_data_store(
             (filtered_df_local["Date"] <= end_date)
         ]
 
-    # 2) Other filters: state, species, month, day-of-week, victim activity
+    # Filter by dropdowns
     if selected_states:
         filtered_df_local = filtered_df_local[filtered_df_local["State"].isin(selected_states)]
     if selected_species:
@@ -769,16 +782,13 @@ def update_filtered_data_store(
         filtered_df_local = filtered_df_local[filtered_df_local["DayOfWeek"].isin(selected_dows)]
     if selected_activities:
         filtered_df_local = filtered_df_local[filtered_df_local["Victim.activity"].isin(selected_activities)]
-    
 
-    # 3) NEW: Multi-bin filtering from `selected-bins`
-    #    `selected_bins` is a dict like: { "hist_type": "age", "values": [23, 30, 35] }
+    # Apply any histogram bin filters
     hist_type = selected_bins["hist_type"] if selected_bins else None
     bin_list  = selected_bins["values"] if selected_bins else []
 
     if hist_type and bin_list:
         if hist_type == "age":
-            # numeric match for Victim.age
             filtered_df_local = filtered_df_local[filtered_df_local["Victim.age.group"].isin(bin_list)]
         elif hist_type == "state":
             filtered_df_local = filtered_df_local[filtered_df_local["State"].isin(bin_list)]
@@ -790,7 +800,9 @@ def update_filtered_data_store(
             filtered_df_local = filtered_df_local[filtered_df_local["Site.category"].isin(bin_list)]
         elif hist_type == "activity":
             filtered_df_local = filtered_df_local[filtered_df_local["Victim.activity"].isin(bin_list)]
+
     return filtered_df_local.to_dict("records")
+
 
 @app.callback(
     Output("filtered-data-store", "data", allow_duplicate=True),
@@ -802,17 +814,22 @@ def update_filtered_data_store(
 )
 def update_data_on_map_selection(selected_data, current_data):
     """
-    Update the filtered data store based on box selection on the map.
+    Applies an additional filter based on a box or lasso selection on the map.
+    Only rows matching the selected lat/long coordinates will remain.
+
+    :param selected_data: Data representing the map selection (e.g., box/lasso).
+    :param current_data: The current list of dictionaries stored in 'filtered-data-store'.
+    :return: An updated list of records filtered by the selected map points.
     """
     if not selected_data:
         # If no selection is made, return the current data
         raise PreventUpdate
 
-    # Extract the selected points (lat/lon) from the map
     selected_points = selected_data.get("points", [])
     if not selected_points:
         raise PreventUpdate
 
+    # Round lat/lon to match the data
     selected_coords = [
         (round(point["lat"], 5), round(point["lon"], 5)) for point in selected_points
     ]
@@ -820,7 +837,7 @@ def update_data_on_map_selection(selected_data, current_data):
     # Convert current_data to DataFrame for filtering
     filtered_df = pd.DataFrame(current_data)
 
-    # Filter rows matching selected coordinates
+    # Keep only the rows whose lat/long is in the selected coords
     filtered_df = filtered_df[
         filtered_df.apply(
             lambda row: (row["Latitude"], row["Longitude"]) in selected_coords, axis=1
@@ -829,18 +846,23 @@ def update_data_on_map_selection(selected_data, current_data):
 
     return filtered_df.to_dict("records")
 
-# ------------------------------------------------------------------------------
-# 4) Build stacked bar chart from filtered data
-#  
-# ------------------------------------------------------------------------------
+
 @app.callback(
-    Output("pie-chart", "figure"),  # or rename to "stacked-bar-chart"
+    Output("pie-chart", "figure"),
     [
         Input("filtered-data-store", "data"),
         Input("colorblind-store", "data"),
     ]
 )
 def update_stacked_bar(filtered_data, colorblind_active):
+    """
+    Creates a stacked bar chart showing the count of incidents by
+    shark species and by provoked/unprovoked status.
+
+    :param filtered_data: A list of dictionaries from 'filtered-data-store' representing the filtered dataset.
+    :param colorblind_active: Boolean indicating whether colorblind mode is enabled.
+    :return: A Plotly figure object with stacked bars for each species and provocation status.
+    """
     if not filtered_data:
         fig = px.bar(title="No Data")
         fig.update_layout(clickmode='event+select')
@@ -852,48 +874,37 @@ def update_stacked_bar(filtered_data, colorblind_active):
         fig.update_layout(clickmode='event+select')
         return fig
 
-    # B) bar_data = one row per (species, provoked)
+    # Group by species and provoked/unprovoked
     bar_data = (
         filtered_df_local
         .groupby(["Shark.common.name", "Provoked/unprovoked"], as_index=False)
         .size()
         .rename(columns={"size": "Count"})
     )
-    # Now bar_data columns: [Shark.common.name, Provoked/unprovoked, Count]
 
-    # C) species_totals = sum across provoked => overall count per species
+    # Calculate total incidents per species
     species_totals = (
         bar_data.groupby("Shark.common.name", as_index=False)["Count"]
         .sum()
         .sort_values("Count", ascending=False)
     )
-    # species_totals columns: [Shark.common.name, Count]
-    # sorted descending so top species is first.
 
-    # D) sorted_species_list for the x-axis
-    # Step 3: Determine the top N species to display
-    max_bars = 10  # Set the maximum number of bars here
+    # Keep only top N species, group others as "Other"
+    max_bars = 10
     top_species = species_totals.head(max_bars)["Shark.common.name"].tolist()
 
-    # Step 4: Filter bar_data to only include top species
-    # Group the rest into an "Other" category
     bar_data["Shark.common.name"] = bar_data["Shark.common.name"].apply(
         lambda x: x if x in top_species else "Other"
     )
-
-    # Step 5: Aggregate data again to include "Other" as a single category
     bar_data = (
         bar_data.groupby(["Shark.common.name", "Provoked/unprovoked"], as_index=False)
         .sum()
     )
-
-    # Step 6: Create the sorted species list (with "Other" at the end)
     sorted_species_list = top_species + ["Other"]
 
-    # E) Choose color palette
+    # Choose color palette (default or colorblind)
     color_discrete_sequence = get_color_discrete_sequence(colorblind_active)
 
-    # F) Create the stacked bar
     fig = px.bar(
         bar_data,
         x="Shark.common.name",
@@ -902,38 +913,37 @@ def update_stacked_bar(filtered_data, colorblind_active):
         barmode="stack",
         color_discrete_sequence=color_discrete_sequence,
         category_orders={"Shark.common.name": sorted_species_list},
-        custom_data = ["Shark.common.name", "Provoked/unprovoked"],
-        title="Shark Incidents by Species and Provocation", 
+        custom_data=["Shark.common.name", "Provoked/unprovoked"],
+        title="Shark Incidents by Species and Provocation",
     )
-
 
     fig.update_layout(
-        clickmode='event+select',  # So we get clickData events
+        clickmode='event+select',
         margin={"r": 0, "t": 40, "l": 0, "b": 0},
     )
-
     return fig
 
-
-
-# ------------------------------------------------------------------------------
-# 5) Update Map to highlight the treemap-clicked path
-
-# ------------------------------------------------------------------------------
-# 5) Update Map to highlight the treemap-clicked path
-# (Now includes colorblind-store as Input)
 
 @app.callback(
     Output("map-graph", "figure"),
     [
         Input("filtered-data-store", "data"),
         Input("pie-selected-species", "data"),
-        Input("colorblind-store", "data")  # NEW input
+        Input("colorblind-store", "data")
     ]
 )
 def update_map_from_filtered_data_and_treemap_path(filtered_data, treemap_path, colorblind_active):
-    # Colorblind-friendly color cycle
-    # 1) If no data, return empty figure
+    """
+    Builds a scatter_mapbox plot showing incident counts by location.
+    If a specific species/provoked combination is selected in the stacked bar,
+    those points are highlighted.
+
+    :param filtered_data: Current filtered dataset in dictionary form.
+    :param treemap_path: A string combining the selected species and provoked/unprovoked status (e.g., 'White shark/Unprovoked').
+    :param colorblind_active: Boolean indicating whether colorblind mode is enabled.
+    :return: A Plotly Mapbox figure with markers sized by incident count; selected species are highlighted.
+    """
+    # Check for empty data
     if not filtered_data:
         return px.scatter_mapbox(
             pd.DataFrame({"Latitude": [], "Longitude": [], "Incident Count": []}),
@@ -959,7 +969,7 @@ def update_map_from_filtered_data_and_treemap_path(filtered_data, treemap_path, 
             title="No Data"
         )
 
-    # 2) Highlight "Selected" vs. "Other", same as before
+    # Add a 'Highlight' column to mark selected vs other points
     df_local["Highlight"] = "Other"
     if treemap_path:
         path_parts = treemap_path.split("/")
@@ -974,18 +984,17 @@ def update_map_from_filtered_data_and_treemap_path(filtered_data, treemap_path, 
 
         df_local.loc[mask, "Highlight"] = "Selected"
 
+    # Aggregate by Latitude/Longitude and highlight
     bubble_data = (
         df_local.groupby(["Latitude", "Longitude", "Highlight"])
         .size()
         .reset_index(name="Count")
     )
 
-    # 3) Switch color scales based on colorblind_active
-    #    - If colorblind mode is ON, use a colorblind-friendly scale
-    #    - If colorblind mode is OFF, keep the original "blue -> red" 
+    # Determine color palette for colorblind mode
     color_discrete_sequence = get_color_discrete_sequence(colorblind_active)
 
-    # 4) Build the figure
+    # Create scatter map
     fig = px.scatter_mapbox(
         bubble_data,
         lat="Latitude",
@@ -995,26 +1004,18 @@ def update_map_from_filtered_data_and_treemap_path(filtered_data, treemap_path, 
         color="Highlight",
         zoom=4,
         center={"lat": -25.0, "lon": 133.0},
-        mapbox_style="open-street-map",  # original
-        color_discrete_sequence = color_discrete_sequence,
-
+        mapbox_style="open-street-map",
+        color_discrete_sequence=color_discrete_sequence,
     )
 
-    # Keep your original marker opacity
     fig.update_traces(marker=dict(opacity=0.6), selector=dict(mode='markers'))
-
     fig.update_layout(
-        # title="Shark Incidents Density",
         margin={"r": 0, "t": 40, "l": 0, "b": 0},
         dragmode="select"
     )
-
     return fig
 
 
-# ------------------------------------------------------------------------------
-# 6) Modal + Blur Logic
-# ------------------------------------------------------------------------------
 @app.callback(
     Output("info-modal", "style"),
     Output("selected-incidents-store", "data"),
@@ -1037,6 +1038,21 @@ def handle_modal_and_incidents(
     close_clicks, prev_clicks, next_clicks,
     store_data
 ):
+    """
+    Displaying the incident details in a modal
+    when a map point is clicked by the user. It allows navigation (previous/next)
+    in case of multiple incidents at the same coordinate.
+
+    :param slider_range: Current indices [start_idx, end_idx] for the date slider.
+    :param selectedSpecies: A list of species from the 'species-dropdown'.
+    :param clickData: Data from clicking a point on the map.
+    :param close_clicks: Number of times the modal 'Close' button has been clicked.
+    :param prev_clicks: Number of times the 'Previous' button has been clicked in the modal.
+    :param next_clicks: Number of times the 'Next' button has been clicked in the modal.
+    :param store_data: Current state of the 'selected-incidents-store', including rows and current index.
+    :return: A tuple to update the modal style, the stored incident data, the modal content, 
+             previous/next button styles, and a className for background blur.
+    """
     ctx = dash.callback_context
     if not ctx.triggered:
         return {"display": "none"}, {"rows": [], "current_index": 0}, "No incident data available", {}, {}, ""
@@ -1052,9 +1068,11 @@ def handle_modal_and_incidents(
     prev_style = {"marginRight": "20px", "padding": "8px 16px"}
     next_style = {"padding": "8px 16px"}
 
+    # Close if 'Close' button is clicked
     if "close-modal" in triggered_id:
         return default_style, default_store, default_content, prev_style, next_style, no_blur
 
+    # Filter data by date range
     if slider_range:
         start_date = index_to_date[slider_range[0]]
         end_date = index_to_date[slider_range[1]]
@@ -1062,9 +1080,11 @@ def handle_modal_and_incidents(
     else:
         filter_df = df.copy()
 
+    # Filter by selected species if any
     if selectedSpecies:
         filter_df = filter_df[filter_df["Shark.common.name"].isin(selectedSpecies)]
 
+    # If the map was clicked, gather incident details for the clicked location's coordinates
     if "map-graph.clickData" in triggered_id and clickData:
         lat_clicked = round(clickData["points"][0]["lat"], 5)
         lon_clicked = round(clickData["points"][0]["lon"], 5)
@@ -1127,6 +1147,7 @@ def handle_modal_and_incidents(
         "borderRadius": "10px",
     }
 
+    # Navigation: previous/next buttons
     if "prev-incident" in triggered_id:
         current_idx = max(0, current_idx - 1)
     elif "next-incident" in triggered_id:
@@ -1140,6 +1161,14 @@ def handle_modal_and_incidents(
 
 
 def build_modal_content(rows, idx):
+    """
+    Builds the content (text + image) displayed in the info modal,
+    given a list of incident rows and the current index.
+
+    :param rows: A list of dictionaries containing incident data.
+    :param idx: The index of the currently displayed incident in 'rows'.
+    :return: An HTML Div component containing text details and an image for the current incident.
+    """
     if not rows or idx < 0 or idx >= len(rows):
         return html.Div("No incident data available")
 
@@ -1175,7 +1204,18 @@ def build_modal_content(rows, idx):
         ]
     )
 
+
 def get_nav_button_styles(num_rows, current_idx, prev_style, next_style):
+    """
+    Determines the display style of 'Previous' and 'Next' buttons
+    based on the total rows and the current index.
+
+    :param num_rows: Total number of incidents in the modal.
+    :param current_idx: Current index of the displayed incident.
+    :param prev_style: Base style dictionary for the 'Previous' button.
+    :param next_style: Base style dictionary for the 'Next' button.
+    :return: The updated style dictionaries for 'Previous' and 'Next' to show/hide them as needed.
+    """
     prev_style = prev_style.copy()
     next_style = next_style.copy()
 
@@ -1197,24 +1237,26 @@ def get_nav_button_styles(num_rows, current_idx, prev_style, next_style):
     return prev_style, next_style
 
 
-# ------------------------------------------------------------------------------
-# 7) Third Chart (Histogram):  
-# ------------------------------------------------------------------------------
 @app.callback(
     Output("third-chart", "figure"),
     [
-        Input("filtered-data-store", "data"),         # Auto-update on filters
-        Input("pie-selected-species", "data"),        # Auto-update on pie chart selection
-        Input("histogram-type", "value"),             # Auto-update on radio button
-        Input("update-histogram-button", "n_clicks"),  # Manual trigger
-        Input("colorblind-store", "data"),            # Colorblind mode
+        Input("filtered-data-store", "data"),
+        Input("pie-selected-species", "data"),
+        Input("histogram-type", "value"),
+        Input("update-histogram-button", "n_clicks"),
+        Input("colorblind-store", "data"),
     ],
 )
 def update_histogram(filtered_data, treemap_path, histogram_type, n_clicks, colorblind_active):
     """
-    Update the histogram based on:
-    - Dynamic changes (filters, treemap selections, radio items)
-    - Apply Selection button for selected bins.
+    Updates the histogram based on the currently filtered data
+
+    :param filtered_data: A list of dictionaries from the filtered dataset.
+    :param treemap_path: A string with the selected species/provoked state from the stacked bar chart.
+    :param histogram_type: One of 'age', 'state', 'month', 'dayofweek', 'sitecategory', or 'activity'.
+    :param n_clicks: Number of times the 'Apply Selection' button has been clicked.
+    :param colorblind_active: Boolean to toggle colorblind-friendly palettes.
+    :return: A Plotly histogram (or bar chart) figure.
     """
     if not filtered_data:
         return px.scatter(title="No Data in Histogram")
@@ -1222,7 +1264,7 @@ def update_histogram(filtered_data, treemap_path, histogram_type, n_clicks, colo
     if df_local.empty:
         return px.scatter(title="No Data in Histogram")
 
-    # Apply treemap path filter
+    # Apply species/provoked filter from the stacked bar
     if treemap_path:
         path_parts = treemap_path.split("/")
         species_sel = path_parts[0] if len(path_parts) >= 1 else None
@@ -1235,7 +1277,7 @@ def update_histogram(filtered_data, treemap_path, histogram_type, n_clicks, colo
             mask &= (df_local["Provoked/unprovoked"] == provoked_sel)
         df_local = df_local[mask]
 
-    # Apply histogram type
+    # Choose which column to show on the x-axis
     if histogram_type == "age":
         df_local = df_local.dropna(subset=["Victim.age.group"])
         x_axis = "Victim.age.group"
@@ -1263,19 +1305,21 @@ def update_histogram(filtered_data, treemap_path, histogram_type, n_clicks, colo
     else:
         return px.scatter(title="Invalid Histogram Type")
 
-    # Set color scheme
     color_discrete_sequence = get_color_discrete_sequence(colorblind_active)
 
-    # Create the histogram
+    # Build the histogram (or bar chart)
     fig = px.histogram(
         df_local,
         x=x_axis,
-        category_orders={"Victim.age.group": custom_age_order,"DayOfWeek": custom_day_order, "Month": custom_month_order},
+        category_orders={
+            "Victim.age.group": custom_age_order, 
+            "DayOfWeek": custom_day_order, 
+            "Month": custom_month_order
+        },
         title=title,
-        barnorm = None,
+        barnorm=None,
         color_discrete_sequence=color_discrete_sequence,
     )
-
 
     fig.update_layout(
         clickmode="event+select",
@@ -1284,18 +1328,24 @@ def update_histogram(filtered_data, treemap_path, histogram_type, n_clicks, colo
     return fig
 
 
-# ------------------------------------------------------------------------------
-# 8) PCP: (B) ADD colorblind-store as Input
-# ------------------------------------------------------------------------------
 @app.callback(
     Output("pcp-graph", "figure"),
     [
         Input("filtered-data-store", "data"),
         Input("pie-selected-species", "data"),
-        Input("colorblind-store", "data")  # NEW
+        Input("colorblind-store", "data")
     ]
 )
 def update_pcp_graph_no_grouping(filtered_data, treemap_path, colorblind_active):
+    """
+    Updating the parallel coordinates plot to visualize numeric variables
+    across incidents. The line color is determined by 'Victim.injury.num'.
+
+    :param filtered_data: A list of dictionaries representing the filtered dataset.
+    :param treemap_path: Optional string from the stacked bar to filter by species/provoked.
+    :param colorblind_active: Boolean to toggle a colorblind-friendly color scale.
+    :return: A Plotly 'Parcoords' figure encoding numeric dimensions and injury severity.
+    """
     if not filtered_data:
         return px.scatter(title="No Data in PCP")
 
@@ -1303,6 +1353,7 @@ def update_pcp_graph_no_grouping(filtered_data, treemap_path, colorblind_active)
     if df_local.empty:
         return px.scatter(title="No Data in PCP")
 
+    # Apply filter from stacked bar (species/provoked)
     if treemap_path:
         path_parts = treemap_path.split("/")
         species_sel = path_parts[0] if len(path_parts) >= 1 else None
@@ -1315,6 +1366,7 @@ def update_pcp_graph_no_grouping(filtered_data, treemap_path, colorblind_active)
             mask &= (df_local["Provoked/unprovoked"] == provoked_sel)
         df_local = df_local[mask]
 
+    # Numeric columns for the PCP
     numeric_cols = [
         "Distance.to.shore.m",
         "Depth.of.incident.m",
@@ -1324,26 +1376,29 @@ def update_pcp_graph_no_grouping(filtered_data, treemap_path, colorblind_active)
     for c in numeric_cols:
         df_local[c] = pd.to_numeric(df_local[c], errors="coerce")
 
+    # Drop rows where any needed column is NaN
     df_local = df_local.dropna(subset=numeric_cols)
     if df_local.empty:
         return px.scatter(title="No Data for PCP")
 
+    # Choose color scale based on colorblind mode
     color_map = px.colors.sequential.Cividis if colorblind_active else px.colors.sequential.RdBu
 
+    # Create Parallel Coordinates Plot using plotly.graph_objects
     fig = go.Figure(data=go.Parcoords(
         line=dict(
-            color=df_local['Victim.injury.num'],  # Line color based on numeric injury
-            colorscale=color_map,  # Color scale
-            showscale=True,  # Show the color scale legend
-            cmin=df_local['Victim.injury.num'].min(),  # Min value for color scale
-            cmax=df_local['Victim.injury.num'].max(),  # Max value for color scale
+            color=df_local['Victim.injury.num'],
+            colorscale=color_map,
+            showscale=True,
+            cmin=df_local['Victim.injury.num'].min(),
+            cmax=df_local['Victim.injury.num'].max(),
         ),
         dimensions=[
             dict(
-                label="Shore Dist (m)",  # Label for this dimension
-                values=df_local["Distance.to.shore.m"],  # Values for this dimension
+                label="Shore Dist (m)",
+                values=df_local["Distance.to.shore.m"],
                 range=[df_local["Distance.to.shore.m"].min(), 4000],
-                constraintrange=[10, 50]  # Optional: highlight a range
+                constraintrange=[10, 50]  # Example highlighted range
             ),
             dict(
                 label="Incident Depth (m)",
@@ -1360,22 +1415,13 @@ def update_pcp_graph_no_grouping(filtered_data, treemap_path, colorblind_active)
                 values=df_local["Time.in.water.min"],
                 range=[df_local["Time.in.water.min"].min(), df_local["Time.in.water.min"].max()],
             )
-            ]
-        ))
-
-    # if colorblind_active:
-    #     # example color that stands out well for colorblind
-    #     fig.update_traces(line_color="#3B528B")
-    # else:
-    #     # original color
-    #     fig.update_traces(line_color="blue")
+        ]
+    ))
 
     fig.update_layout(title="Parallel Coordinates Plot")
     return fig
 
-# ------------------------------------------------------------------------------
-# 9) Help Modal
-# ------------------------------------------------------------------------------
+
 @app.callback(
     [
         Output("help-modal", "style", allow_duplicate=True),
@@ -1388,11 +1434,19 @@ def update_pcp_graph_no_grouping(filtered_data, treemap_path, colorblind_active)
     prevent_initial_call=True
 )
 def toggle_help_modal(help_clicks, close_help_clicks):
+    """
+    Opens help modal. Clicking 'Help' shows it;
+    clicking 'Close' hides it.
+
+    :param help_clicks: The number of times the 'Help' button has been clicked.
+    :param close_help_clicks: The number of times the 'Close' button on the modal has been clicked.
+    :return: A tuple controlling the modal's style and the background blur className.
+    """
     ctx = dash.callback_context
     if not ctx.triggered:
         raise PreventUpdate
     triggered_id = ctx.triggered[0]["prop_id"].split(".")[0]
-    # Show modal when the Help button is clicked
+
     if triggered_id == "help-button":
         return (
             {
@@ -1410,17 +1464,11 @@ def toggle_help_modal(help_clicks, close_help_clicks):
             },
             "blurred",
         )
-    # Hide modal when the Close button is clicked
     if triggered_id == "close-help-modal":
         return {"display": "none"}, ""
     raise PreventUpdate
 
-# ------------------------------------------------------------------------------
-# 10) Clear Histogram Selection
-# ------------------------------------------------------------------------------
-# -------------------------------------------------------
-# NEW CALLBACK: Toggle bins in "selected-bins" via clicks
-# -------------------------------------------------------
+
 @app.callback(
     Output("temp-bin-selection", "data", allow_duplicate=True),
     Input("third-chart", "clickData"),
@@ -1432,7 +1480,13 @@ def toggle_help_modal(help_clicks, close_help_clicks):
 )
 def accumulate_temp_bins(click_data, temp_store, current_hist_type):
     """
-    Update temporary bin selections on bin clicks but don't apply them yet.
+    Temporarily collects bin selections on the histogram.
+    The selections only apply when 'Apply Selection' is clicked.
+
+    :param click_data: Data about the histogram bin that was clicked.
+    :param temp_store: The existing temporary bin selections dictionary.
+    :param current_hist_type: The currently chosen histogram dimension (e.g. 'age', 'state').
+    :return: An updated dictionary reflecting toggled bin selections.
     """
     if not click_data or "points" not in click_data or not click_data["points"]:
         raise PreventUpdate
@@ -1441,11 +1495,11 @@ def accumulate_temp_bins(click_data, temp_store, current_hist_type):
     if temp_store is None:
         temp_store = {"hist_type": current_hist_type, "values": []}
 
-    # Reset old selections if histogram type changes
+    # If histogram type changed, reset the selections
     if temp_store["hist_type"] != current_hist_type:
         temp_store = {"hist_type": current_hist_type, "values": []}
 
-    # Toggle logic for bins
+    # Toggle the clicked bin
     if bin_clicked in temp_store["values"]:
         temp_store["values"].remove(bin_clicked)
     else:
@@ -1453,9 +1507,7 @@ def accumulate_temp_bins(click_data, temp_store, current_hist_type):
 
     return temp_store
 
-# -------------------------------------------------------
-# 11) Clear Histogram Selection
-# -------------------------------------------------------
+
 @app.callback(
     [
         Output("selected-bins", "data", allow_duplicate=True),
@@ -1466,7 +1518,10 @@ def accumulate_temp_bins(click_data, temp_store, current_hist_type):
 )
 def clear_bin_selections(n_clicks):
     """
-    Reset both the applied bins and temporary bin selections.
+    Clears both the main 'selected-bins' store and the temporary bin selection.
+    
+    :param n_clicks: Number of times the 'Clear Selection' button has been clicked.
+    :return: A tuple with two empty selection dictionaries.
     """
     if n_clicks is None:
         raise PreventUpdate
@@ -1474,9 +1529,7 @@ def clear_bin_selections(n_clicks):
     empty_selection = {"hist_type": None, "values": []}
     return empty_selection, empty_selection
 
-# -------------------------------------------------------
-# 12) Apply Selected Bins
-# -------------------------------------------------------
+
 @app.callback(
     Output("selected-bins", "data", allow_duplicate=True),
     Input("update-histogram-button", "n_clicks"),
@@ -1485,7 +1538,12 @@ def clear_bin_selections(n_clicks):
 )
 def apply_selected_bins(n_clicks, temp_selection):
     """
-    Apply temporary bin selections to the main store when the button is clicked.
+    Moves the temporarily stored bin selections ('temp-bin-selection')
+    into the main 'selected-bins' store, effectively applying the filter.
+
+    :param n_clicks: Number of times the 'Apply Selection' button has been clicked.
+    :param temp_selection: The temporary bin selections dictionary to be applied.
+    :return: The updated selections to store in 'selected-bins'.
     """
     if n_clicks is None or not temp_selection:
         raise PreventUpdate
@@ -1493,8 +1551,7 @@ def apply_selected_bins(n_clicks, temp_selection):
     return temp_selection
 
 
-# ------------------------------------------------------------------------------
-# Run
-# ------------------------------------------------------------------------------
+# Run the app
 if __name__ == "__main__":
     app.run_server(debug=True)
+
