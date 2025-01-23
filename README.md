@@ -20,12 +20,12 @@ This project is a web application built using Python Dash that provides hat visu
 
 - **Colorblind Mode**: A toggle mode with colorblind-friendly palettes for enhanced accessibility.
 
-- **Reset Button**: Resetting the tool to its initial state 
+- **Reset Button**: Resetting the tool to its initial state. 
 
 - **Help Modal**: A detailed guide for navigating and using the dashboard.
 ## Installation
 
-    1) Install my-project with npm
+    1) Clone this repository to your local machine:
 
 ```bash
   git clone https://github.com/DimPap99/JBI100
@@ -55,7 +55,7 @@ The following Python libraries are required:
     • gunicorn==19.9.0: For deploying the application.
 ## Usage
 
-    1) Run the app
+    1) Run the app:
 ```bash
   python app.py
 ```
