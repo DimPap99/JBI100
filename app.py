@@ -288,7 +288,7 @@ app.layout = html.Div(style={"position": "relative"}, children=[
                                     "padding": "10px"
                                 },
                                 children=[
-                                    html.H4("Analyze Contributing Factors", style={"paddingLeft": "12px"}),
+                                    html.H4("Analyze Contributing Factors", style={"paddingLeft": "12px", "color": "grey"}),
 
                                     dcc.RadioItems(
                                         id="histogram-type",
@@ -302,16 +302,20 @@ app.layout = html.Div(style={"position": "relative"}, children=[
                                         ],
                                         value="age",  # Default
                                         inline=True,
-                                        style={"marginBottom": "15px"}
+                                        style={"marginBottom": "15px", "color": "grey"} 
                                     ),
-
-                                     html.Button(
+                                    html.Button(
+                                        "Apply Selection",
+                                        id="update-histogram-button",
+                                        n_clicks=0,  # Default value
+                                        style={"marginTop": "15px", "marginBottom": "15px"}
+                                        ),
+                                    html.Button(
                                         "Clear Selection",
                                         id="clear-histogram-selection",
                                         n_clicks=0,
                                         style={"marginBottom": "15px"}
                                         ),
-
                                     dcc.Graph(
                                         id="third-chart",
                                         style={"height": "85%", "width": "100%"},
@@ -374,23 +378,6 @@ app.layout = html.Div(style={"position": "relative"}, children=[
                                                 style={"display": "flex", "alignItems": "center", "justifyContent": "space-between"},
                                                 children=[
                                                     html.H4("Shark Profiles", style={"paddingLeft": "12px"}),
-                                                    html.Button(
-                                                        "?",
-                                                        id="color-info-button",
-                                                        title="Learn about the color scheme",
-                                                        style={
-                                                            
-                                                            "color": "white",
-                                                            "border": "none",
-                                                            "borderRadius": "50%",
-                                                            "width": "24px",
-                                                            "height": "24px",
-                                                            "textAlign": "center",
-                                                            "fontSize": "16px",
-                                                            "cursor": "pointer",
-                                                            "marginRight": "12px",
-                                                        },
-                                                    ),
                                                 ],
                                             ),
                                             dcc.Graph(
@@ -412,12 +399,11 @@ app.layout = html.Div(style={"position": "relative"}, children=[
     # Stores
     # --------------------------------------------------------------------------
     dcc.Store(id="selected-incidents-store", data={"rows": [], "current_index": 0}),
-    dcc.Store(id="filtered-data-store"),
+    dcc.Store(id="filtered-data-store", data=df.to_dict("records")),
     dcc.Store(id="pie-selected-species", data=None),
     dcc.Store(id="histogram-click-store", data=None),
     dcc.Store(id="colorblind-store", data=False),
-    dcc.Store(id="selected-bins", data={"hist_type": "age", "values": []}  # or whatever initial structure you prefer
-),
+    dcc.Store(id="selected-bins", data={"hist_type": "age", "values": []}),  # or whatever initial structure you prefer
 
     # Modal
     html.Div(
@@ -533,68 +519,9 @@ app.layout = html.Div(style={"position": "relative"}, children=[
         ),
     ],
     style={"color": "black"},
-    ),
+            ),
         ],
-    ),
-    # Add a help modal for instructions about the color scheme on the PCP
-    html.Div(
-    id="color-info-modal",
-    style={
-        "display": "none",  # Initially hidden
-        "position": "fixed",
-        "top": "20%",
-        "left": "30%",
-        "width": "40%",
-        "height": "auto",
-        "backgroundColor": "white",
-        "boxShadow": "0px 0px 10px rgba(0, 0, 0, 0.5)",
-        "zIndex": 1000,
-        "padding": "20px",
-        "borderRadius": "10px",
-        "color": "black",  # Ensures the text is black
-    },
-    children=[
-        html.Button(
-            "Close",
-            id="close-color-info-modal",
-            style={"float": "right", "margin": "10px"}
-        ),
-        html.H4(
-            "Color Scheme Information",
-            style={"textAlign": "center", "marginBottom": "20px", "color": "black"}
-        ),
-        html.P(
-            "Below is a table showing the numerical codes and their corresponding categories:",
-            style={"textAlign": "center", "marginBottom": "10px", "color": "black"}
-        ),
-        # DataTable for displaying the mapping
-        dash.dash_table.DataTable(
-            id="injury-category-table",
-            columns=[
-                {"name": "Numeric Code", "id": "numeric_code"},
-                {"name": "Category", "id": "category"}
-            ],
-            data=[
-                {"numeric_code": 0, "category": "Uninjured"},
-                {"numeric_code": 1, "category": "Injured"},
-                {"numeric_code": 2, "category": "Fatal"},
-                # Add more categories as needed
-            ],
-            style_cell={
-                "textAlign": "center",  # Center-align the text
-                "fontSize": "16px",    # Adjust font size
-                "padding": "5px",
-                "color": "black",      # Ensure text color is black
-            },
-            style_header={
-                # "backgroundColor": "#f2f2f2",  # Light gray for header
-                "fontWeight": "bold",
-                "color": "black"
-            },
-            style_table={"width": "100%", "margin": "10px auto"},  # Center the table
-        ),
-    ],
-    ),
+    )
     ]),
 
 
@@ -1264,20 +1191,29 @@ def get_nav_button_styles(num_rows, current_idx, prev_style, next_style):
 @app.callback(
     Output("third-chart", "figure"),
     [
-        Input("filtered-data-store", "data"),
-        Input("pie-selected-species", "data"),
-        Input("histogram-type", "value"),
-        Input("colorblind-store", "data")  # colorblind option
-    ]
+        Input("filtered-data-store", "data"),         # Auto-update on filters
+        Input("pie-selected-species", "data"),        # Auto-update on pie chart selection
+        Input("histogram-type", "value"),             # Auto-update on radio button
+        Input("update-histogram-button", "n_clicks"),  # Manual trigger
+    ],
+    [
+        State("selected-bins", "data"),                # Multi-bin selection
+        State("colorblind-store", "data"),            # Colorblind mode
+    ],
 )
-def update_histogram(filtered_data, treemap_path, histogram_type, colorblind_active):
+def update_histogram_on_click(filtered_data, treemap_path, histogram_type, n_clicks, selected_bins, colorblind_active):
+    """
+    Update the histogram based on:
+    - Dynamic changes (filters, treemap selections, radio items)
+    - Apply Selection button for selected bins.
+    """
     if not filtered_data:
         return px.scatter(title="No Data in Histogram")
-
     df_local = pd.DataFrame(filtered_data)
     if df_local.empty:
         return px.scatter(title="No Data in Histogram")
 
+    # Apply treemap path filter
     if treemap_path:
         path_parts = treemap_path.split("/")
         species_sel = path_parts[0] if len(path_parts) >= 1 else None
@@ -1290,6 +1226,7 @@ def update_histogram(filtered_data, treemap_path, histogram_type, colorblind_act
             mask &= (df_local["Provoked/unprovoked"] == provoked_sel)
         df_local = df_local[mask]
 
+    # Apply histogram type
     if histogram_type == "age":
         df_local["Victim.age"] = pd.to_numeric(df_local["Victim.age"], errors="coerce")
         df_local = df_local.dropna(subset=["Victim.age"])
@@ -1318,10 +1255,10 @@ def update_histogram(filtered_data, treemap_path, histogram_type, colorblind_act
     else:
         return px.scatter(title="Invalid Histogram Type")
 
-
+    # Set color scheme
     color_discrete_sequence = get_color_discrete_sequence(colorblind_active)
 
-
+    # Create the histogram
     fig = px.histogram(
         df_local,
         x=x_axis,
@@ -1330,7 +1267,6 @@ def update_histogram(filtered_data, treemap_path, histogram_type, colorblind_act
         barnorm = None,
         color_discrete_sequence=color_discrete_sequence,
     )
-
 
     fig.update_layout(
         clickmode="event+select",
@@ -1490,7 +1426,7 @@ def accumulate_histogram_bins(click_data, store_data, current_hist_type):
     Each click on a histogram bin will toggle that bin in store_data["values"].
     We also store the histogram type so we know which dimension is being selected.
     """
-    if not click_data:
+    if not click_data or "points" not in click_data or not click_data["points"]:
         raise PreventUpdate
 
     bin_clicked = click_data["points"][0].get("x")
@@ -1520,59 +1456,43 @@ def accumulate_histogram_bins(click_data, store_data, current_hist_type):
         Output("third-chart", "clickData", allow_duplicate=True),
     ],
     Input("clear-histogram-selection", "n_clicks"),
+    [
+        State("filtered-data-store", "data"),
+        State("colorblind-store", "data"),
+    ],
     prevent_initial_call=True
 )
-def clear_multi_histogram_selection(n_clicks):
+def clear_multi_histogram_selection(n_clicks, filtered_data, colorblind_active):
     """
     Reset both the selected-bins store and the histogram's own clickData
     whenever the user clicks the 'Clear Selection' button.
     """
-    if n_clicks:
-        empty_store = {"hist_type": None, "values": []}
-        return empty_store, None
-    raise PreventUpdate
-
-# ------------------------------------------------------------------------------
-# 12) Color Info Modal
-# ------------------------------------------------------------------------------
-@app.callback(
-    [
-    Output("color-info-modal", "style"),
-    Output("background-container", "className", allow_duplicate=True),
-    ],
-    [
-        Input("color-info-button", "n_clicks"),
-        Input("close-color-info-modal", "n_clicks"),
-    ],
-    prevent_initial_call=True
-)
-def toggle_color_info_modal(open_clicks, close_clicks):
-    ctx = dash.callback_context
-    if not ctx.triggered:
+    if n_clicks is None:
         raise PreventUpdate
-    triggered_id = ctx.triggered[0]["prop_id"].split(".")[0]
 
-    if triggered_id == "color-info-button":
-        return ({
-            "display": "block",
-            "position": "fixed",
-            "top": "20%",
-            "left": "30%",
-            "width": "40%",
-            "height": "auto",
-            "backgroundColor": "white",
-            "boxShadow": "0px 0px 10px rgba(0, 0, 0, 0.5)",
-            "zIndex": 1000,
-            "padding": "20px",
-            "borderRadius": "10px",
-        },
-        "blurred",
+    # Reset the `selected-bins` store
+    empty_bins = {"hist_type": None, "values": []}
+
+    # Generate the default "Victim Age" histogram
+    df_local = pd.DataFrame(filtered_data)
+    df_local["Victim.age"] = pd.to_numeric(df_local["Victim.age"], errors="coerce")
+    df_local = df_local.dropna(subset=["Victim.age"])
+
+    color_discrete_sequence = get_color_discrete_sequence(colorblind_active)
+
+    fig = px.histogram(
+        df_local,
+        x="Victim.age",
+        title="Histogram: Victim Age",
+        color_discrete_sequence=color_discrete_sequence,
     )
 
-    elif triggered_id == "close-color-info-modal":
-        return {"display": "none"}, ""
+    fig.update_layout(
+        clickmode="event+select",
+        margin={"r": 0, "t": 40, "l": 0, "b": 0}
+    )
 
-    raise PreventUpdate
+    return empty_bins, fig
 
 # ------------------------------------------------------------------------------
 # Run
