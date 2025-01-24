@@ -42,15 +42,15 @@ This project is a web application built using Python Dash that provides hat visu
 Before installing the program, ensure you have the following:
 - **Operating System**: Compatible with Linux, macOS, and Windows (Windows 10 or later recommended).
 
-- **Python**: Python 2.7 or Python 3.5+
+- **Python**: Python 3.5+
 
 - **CSS**: Skeleton Framework V2.0.4
 
 The following Python libraries are required:
 
-    • dash==1.12.0: For building the web application.
+    • dash==2.18.2: For building the dashboard web application.
 
-    • pandas==0.24.1: For data manipulation and preprocessing.
+    • pandas: For data manipulation and preprocessing.
 
     • gunicorn==19.9.0: For deploying the application.
 ## Usage
