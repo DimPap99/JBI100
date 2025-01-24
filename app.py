@@ -44,7 +44,16 @@ df["Site.category"] = df["Site.category"].str.title()
 
 # Create a new column for victim injury as numeric
 df["Victim.injury"] = df["Victim.injury"].str.replace(r"(Injured|injury)", "injured", case=False, regex=True)
-df["Victim.injury.num"] = pd.Categorical(df["Victim.injury"]).codes
+# Drop the unkown category
+df = df[df["Victim.injury"] != "unknown"]
+# Custom mapping for injury type
+injury_map = {
+    "uninjured": 0,
+    "injured": 1,
+    "fatal": 2
+}
+
+df["Victim.injury.num"] = df["Victim.injury"].map(injury_map)
 # Fix typos and convert to title case
 df['Victim.activity'] = df['Victim.activity'].str.replace("snorkeling", "snorkelling")
 df['Victim.activity'] = df['Victim.activity'].str.replace("diving, collecting", "diving")
