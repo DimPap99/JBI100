@@ -48,8 +48,15 @@ df["Site.category"] = df["Site.category"].str.title()
 # Create numeric codes for Victim.injury
 # eplacing values in Victim.injury column where it is needed
 df["Victim.injury"] = df["Victim.injury"].str.replace(r"(Injured|injury)", "injured", case=False, regex=True)
-df["Victim.injury.num"] = pd.Categorical(df["Victim.injury"]).codes
-
+# Drop the unkown category
+df = df[df["Victim.injury"] != "unknown"]
+# Custom mapping for injury type
+injury_map = {
+    "uninjured": 0,
+    "injured": 1,
+    "fatal": 2
+}
+df["Victim.injury.num"] = df["Victim.injury"].map(injury_map)
 # Replacing values in 'Victim.activity' column where it is needed
 df['Victim.activity'] = df['Victim.activity'].str.replace("snorkeling", "snorkelling")
 df['Victim.activity'] = df['Victim.activity'].str.replace("diving, collecting", "diving")
@@ -1382,7 +1389,7 @@ def update_pcp_graph_no_grouping(filtered_data, treemap_path, colorblind_active)
         return px.scatter(title="No Data for PCP")
 
     # Choose color scale based on colorblind mode
-    color_map = px.colors.sequential.Cividis if colorblind_active else px.colors.sequential.RdBu
+    color_map = px.colors.sequential.Cividis if colorblind_active else px.colors.sequential.Bluered
 
     # Create Parallel Coordinates Plot using plotly.graph_objects
     fig = go.Figure(data=go.Parcoords(
