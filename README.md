@@ -59,7 +59,9 @@ The following Python libraries are required:
 ```bash
   python app.py
 ```
-    2) Open your browser and go to http://127.0.0.1:54112/ to access the dashboard.
+    2) Open your browser and go to http://127.0.0.1:<port>/ to access the dashboard.
+    2.1) <port>: The default is 8050, however the web server might assign another port if it is already in use.
+    
 ## License 
 Distributed under the Unlicense License. See LICENSE.txt for more information.
 ## Acknowledgements
