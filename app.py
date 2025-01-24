@@ -532,7 +532,7 @@ app.layout = html.Div(style={"position": "relative"}, children=[
                         html.Li(
                             "Use the Parallel Coordinates Plot to explore numeric variables such as water depth, "
                             "distance to shore, total water depth, and time in water. The plot is color-coded based on "
-                            "the type of injury for added insight."
+                            "the type of injury for added insight. The color codings are: uninjured (0), injured (1), fatal (2)."
                         ),
                         html.Li(
                             "Enable Colorblind Mode using the 'Toggle Colorblind Mode' button at the top-left. "
